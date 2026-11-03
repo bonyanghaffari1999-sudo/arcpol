@@ -1,0 +1,95 @@
+:root {
+  /* Brand and surfaces */
+  --brand-forest: #17392b;
+  --brand-forest-deep: #102c21;
+  --brand-green: #47785d;
+  --brand-sage: #a8bbad;
+  --brand-clay: #bd825f;
+  --surface-ivory: #f6f6ef;
+  --surface-paper: #fffefa;
+  --surface-mint: #e1ece5;
+  --surface-soft: #edf1e9;
+  --text-primary: #1d3028;
+  --text-secondary: #637168;
+  --text-subtle: #7a877e;
+  --text-inverse: #f4f5ef;
+  --opacity-brand-watermark: 0.23;
+  --brand-mark-stamp-size: 3rem;
+  --border-subtle: #dce3da;
+  --border-strong: #a8bbad;
+  --focus-ring: #47785d;
+  --status-live: #ba8158;
+  --status-complete: #528166;
+  --status-history: #8b8270;
+  --status-danger: #8c4938;
+  --surface-danger: #f5e8e2;
+
+  /* Typography */
+  --font-body: 'Yekan Bakh Local', Tahoma, Arial, sans-serif;
+  --font-mono: 'DM Mono', Consolas, monospace;
+  --text-caption: 0.625rem;
+  --text-small: 0.75rem;
+  --text-body: 0.9375rem;
+  --text-lead: 1rem;
+  --text-card-title: 1.125rem;
+  --text-record-title: 1.25rem;
+  --text-section-title: 1.3rem;
+  --text-metric: 1.45rem;
+  --text-page-title: clamp(1.7rem, 3vw, 2.5rem);
+  --text-icon: 1.2rem;
+  --text-empty-state: 1.1rem;
+  --line-body: 1.8;
+  --line-reading: 2.1;
+
+  /* Spacing: 4px base */
+  --space-0: 0;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-24: 6rem;
+
+  /* Shape, layout, and motion */
+  --radius-none: 0;
+  --radius-control: 2px;
+  --radius-card: 4px;
+  --shadow-header: 0 14px 18px rgba(25, 47, 34, 0.06);
+  --shadow-overlay: 0 25px 90px rgba(5, 18, 10, 0.28);
+  --content-width: 78.75rem;
+  --container-gutter: 4rem;
+  --container-gutter-tablet: 2.75rem;
+  --container-gutter-mobile: 2.25rem;
+  --page-gutter: clamp(1.125rem, 4vw, 2rem);
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-fast: 160ms;
+  --duration-standard: 220ms;
+  --motion-reduced-duration: 1ms;
+
+  /* Interactive Anatomy building diagram */
+  --building-explode-duration: 720ms;
+  --building-line-fine: 0.8px;
+  --building-line-small: 1px;
+  --building-line-medium: 1.65px;
+  --building-line-strong: 2.2px;
+  --surface-building-caption: color-mix(in srgb, var(--surface-paper) 90%, transparent);
+  --shadow-building-active: 0 3px 4px color-mix(in srgb, var(--brand-forest) 18%, transparent);
+
+  /* Compatibility aliases for the existing page styles. */
+  --ivory: var(--surface-ivory);
+  --paper: var(--surface-paper);
+  --mint: var(--surface-mint);
+  --sage: var(--brand-sage);
+  --green: var(--brand-green);
+  --forest: var(--brand-forest);
+  --forest-deep: var(--brand-forest-deep);
+  --ink: var(--text-primary);
+  --muted: var(--text-secondary);
+  --line: var(--border-subtle);
+  --clay: var(--brand-clay);
+  --mono: var(--font-mono);
+  --ease: var(--ease-standard);
+}

@@ -1,0 +1,27 @@
+{
+  "name": "arcpol-engineering-portfolio",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "predev": "npm run sync:telegram && npm run audit:public-data",
+    "dev": "vite",
+    "prebuild": "npm run sync:telegram && npm run audit:public-data",
+    "build": "vite build",
+    "preview": "vite preview",
+    "sync:telegram": "node scripts/sync-telegram-export.mjs",
+    "audit:public-data": "node scripts/audit-public-projects.mjs",
+    "telegram:discover-group": "node scripts/telegram-group-bot.mjs --discover",
+    "telegram:bot": "node scripts/telegram-group-bot.mjs"
+  },
+  "dependencies": {
+    "vue": "^3.5.22"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.1",
+    "vite": "^7.1.7"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}
