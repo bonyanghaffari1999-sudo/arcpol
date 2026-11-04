@@ -10,6 +10,7 @@ const props = defineProps({
 
 const description = computed(() => describeService(props.title))
 const backHref = computed(() => `#/services?category=${encodeURIComponent(props.group.id)}`)
+const buildingHref = computed(() => `#/building?service=${encodeURIComponent(props.title)}`)
 function formatDate(value) {
   if (!value) return '—'
   const date = new Date(value)
@@ -33,7 +34,7 @@ function briefReportSummary(value) {
           <h1>{{ title }}</h1>
           <p>{{ description }}</p>
         </div>
-        <a class="button button-dark" href="#/contact">گفت‌وگو دربارهٔ این خدمت <span aria-hidden="true">↗</span></a>
+        <div class="service-detail-actions"><a class="button button-outline" :href="buildingHref">جای این خدمت روی ساختمان <span aria-hidden="true">↗</span></a><a class="button button-dark" href="#/contact">گفت‌وگو دربارهٔ این خدمت <span aria-hidden="true">↗</span></a></div>
       </header>
 
       <section class="service-detail-note" aria-label="دامنهٔ همکاری">
@@ -71,6 +72,7 @@ function briefReportSummary(value) {
 .service-detail-heading h1 { margin: var(--space-3) 0; color: var(--brand-forest); font-size: clamp(2rem, 4vw, 3.4rem); font-weight: 500; line-height: 1.5; }
 .service-detail-heading p { max-width: 660px; margin: 0; color: var(--text-secondary); font-size: var(--text-lead); line-height: var(--line-reading); }
 .service-detail-heading .button { flex: 0 0 auto; }
+.service-detail-actions { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-3); flex-shrink: 0; }
 .service-detail-note { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: var(--space-4); margin-top: var(--space-8); padding: var(--space-4) var(--space-6); background: var(--surface-mint); }
 .detail-note-index { color: var(--brand-green); font-family: var(--font-mono); font-size: 1.4rem; }
 .service-detail-note strong { color: var(--brand-forest); font-size: var(--text-body); font-weight: 600; }

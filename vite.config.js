@@ -66,7 +66,7 @@ function watchTelegramExport() {
 
 export default defineConfig({
   plugins: [vue(), localAdminApi(projectRoot), watchTelegramExport()],
-  server: { host: '127.0.0.1' },
+  server: { host: '127.0.0.1', port: 5174, strictPort: true },
   preview: {
     host: '127.0.0.1',
     allowedHosts: ['notify-slideshow-confident-colleagues.trycloudflare.com'],

@@ -2,6 +2,7 @@ node_modules/
 dist/
 .tools/
 .local-server*.log
+.local-server.pid
 tmp/
 .env.*
 !.env.telegram.example

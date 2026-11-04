@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import siteData from './site-data.json'
 import telegramProjectRecords from './telegram-projects.json'
 import telegramReportRecords from './telegram-reports.json'
@@ -16,10 +16,11 @@ import ContactPage from './components/contact/ContactPage.vue'
 import FeedbackPage from './components/feedback/FeedbackPage.vue'
 import ProjectsPage from './components/projects/ProjectsPage.vue'
 import ServicesPage from './components/services/ServicesPage.vue'
-import BuildingExplorer from './components/building/BuildingExplorer.vue'
 import AdminPage from './components/admin/AdminPage.vue'
 import PortalPage from './components/portal/PortalPage.vue'
 import { findServiceEvidence } from './service-details.js'
+
+const BuildingExplorer = defineAsyncComponent(() => import('./components/building/BuildingExplorer.vue'))
 
 function keepPhotographedReports(record) {
   const timeline = (record.timeline || [])
@@ -503,6 +504,7 @@ onUnmounted(() => {
       />
       <BuildingExplorer
         v-else-if="currentPage === 'building'"
+        :initial-service="serviceNameFromRoute"
         :service-groups="serviceGroups"
         :additional-services="additionalServices"
         :projects="projects"

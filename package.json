@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "predev": "npm run sync:telegram && npm run audit:public-data",
     "dev": "vite",
+    "dev:sync": "npm run sync:telegram && npm run audit:public-data",
     "prebuild": "npm run sync:telegram && npm run audit:public-data",
     "build": "vite build",
     "preview": "vite preview",
@@ -15,6 +15,7 @@
     "telegram:bot": "node scripts/telegram-group-bot.mjs"
   },
   "dependencies": {
+    "three": "^0.185.1",
     "vue": "^3.5.22"
   },
   "devDependencies": {

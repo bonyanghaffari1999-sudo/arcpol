@@ -69,7 +69,30 @@
   --duration-standard: 220ms;
   --motion-reduced-duration: 1ms;
 
-  /* Interactive Anatomy building diagram */
+  /* Interactive building: local 3D material palette and type scale. */
+  --building-title-size: clamp(1.8rem, 3.3vw, 3rem);
+  --building-chapter-title: clamp(1.4rem, 2.2vw, 2rem);
+  --building-step-size: 3.75rem;
+  --building-step-mobile-size: 2.5rem;
+  --model-background: #edf0e9;
+  --model-soil: #b3afa0;
+  --model-earth: #8c8170;
+  --model-concrete: #bebeb0;
+  --model-stone: #e6e3d5;
+  --model-frame: #658273;
+  --model-metal: #42584d;
+  --model-glass: #608e87;
+  --model-glassLight: #a4beb2;
+  --model-wood: #a77950;
+  --model-supply: #397e88;
+  --model-cable: #ba9448;
+  --model-light: #fff0c5;
+  --model-leaf: #52735b;
+  --model-leafLight: #849b6f;
+  --model-solar: #2f4f5a;
+  --model-line: #9eaa99;
+
+  /* Static fallback illustration */
   --building-explode-duration: 720ms;
   --building-line-fine: 0.8px;
   --building-line-small: 1px;

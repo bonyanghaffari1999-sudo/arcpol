@@ -1,13 +1,16 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const privateDirectory = path.join(projectRoot, '.local-data')
 const stateFile = path.join(privateDirectory, 'telegram-bot-state.json')
 const inboxFile = path.join(privateDirectory, 'telegram-live-inbox.json')
+const healthFile = path.join(privateDirectory, 'telegram-health.json')
 const attachmentDirectory = path.join(privateDirectory, 'attachments')
 const localEnvFile = path.join(projectRoot, '.env.telegram.local')
+const apiTransportFile = path.join(projectRoot, 'scripts', 'telegram-api.ps1')
 const authorizedGroupTitle = 'گروه کنترل و نظارت مهندسین مشاور غفاری'
 const sessions = new Map()
 
@@ -25,7 +28,7 @@ await loadLocalEnvironment()
 
 const token = process.env.TELEGRAM_BOT_TOKEN?.trim()
 const groupId = process.env.TELEGRAM_GROUP_ID?.trim()
-const apiRoot = token ? `https://api.telegram.org/bot${token}` : ''
+const automaticCapture = process.env.TELEGRAM_CAPTURE_MODE === 'automatic'
 let botUsername = ''
 
 const submissionCategories = [
@@ -46,20 +49,50 @@ if (!token) {
 async function telegram(method, parameters = {}) {
   let response
   try {
-    response = await fetch(`${apiRoot}/${method}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(parameters),
-    })
+    response = await telegramViaWindowsTransport(method, parameters)
   } catch (error) {
     throw new Error(`Telegram ${method} request failed: ${error.message}`)
   }
-  let payload
-  try { payload = await response.json() } catch { payload = null }
-  if (!response.ok || !payload?.ok) {
-    throw new Error(`Telegram ${method} failed: ${payload?.description ?? response.statusText ?? 'unknown error'}`)
+  const payload = response.body
+  if (response.statusCode < 200 || response.statusCode >= 300 || !payload?.ok) {
+    throw new Error(`Telegram ${method} failed: ${payload?.description ?? `HTTP ${response.statusCode}`}`)
   }
   return payload.result
+}
+
+function telegramViaWindowsTransport(method, parameters) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('powershell.exe', [
+      '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', apiTransportFile,
+    ], { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] })
+    let stdout = ''
+    let settled = false
+    const finish = (error, value) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      if (error) reject(error)
+      else resolve(value)
+    }
+    const timer = setTimeout(() => {
+      child.kill()
+      finish(new Error('Windows network request timed out'))
+    }, 40000)
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (chunk) => { stdout += chunk })
+    child.on('error', () => finish(new Error('Windows network transport could not start')))
+    child.on('close', (code) => {
+      if (code !== 0) return finish(new Error('Windows network transport failed'))
+      try {
+        const result = JSON.parse(stdout)
+        if (!Number.isInteger(result.statusCode) || result.body === undefined) throw new Error('Invalid transport response')
+        finish(null, result)
+      } catch {
+        finish(new Error('Windows network transport returned an unreadable response'))
+      }
+    })
+    child.stdin.end(JSON.stringify({ method, parameters }))
+  })
 }
 
 async function readJson(file, fallback) {
@@ -166,12 +199,12 @@ async function storePhoto(message, photo) {
   if (photo.file_size && photo.file_size > 20 * 1024 * 1024) return null
   const file = await telegram('getFile', { file_id: photo.file_id })
   if (!file.file_path) return null
-  const response = await fetch(`https://api.telegram.org/file/bot${token}/${file.file_path}`)
-  if (!response.ok) throw new Error(`Telegram photo download failed: HTTP ${response.status}`)
-  const bytes = Buffer.from(await response.arrayBuffer())
-  if (bytes.length > 20 * 1024 * 1024) return null
-  await fs.mkdir(attachmentDirectory, { recursive: true })
-  await fs.writeFile(destination, bytes)
+  const downloaded = await telegramViaWindowsTransport('downloadFile', { filePath: file.file_path, destination })
+  if (downloaded.statusCode < 200 || downloaded.statusCode >= 300 || downloaded.body.savedBytes > 20 * 1024 * 1024) {
+    await fs.rm(destination, { force: true })
+    if (downloaded.body.savedBytes > 20 * 1024 * 1024) return null
+    throw new Error(`Telegram photo download failed: HTTP ${downloaded.statusCode}`)
+  }
   return path.relative(projectRoot, destination).replaceAll(path.sep, '/')
 }
 
@@ -294,13 +327,13 @@ async function processMessage(message, updateId, inbox) {
     && message.reply_to_message?.message_id === pendingSession.promptMessageId
     ? pendingSession
     : null
-  if (!session) return false
+  if (!session && !automaticCapture) return false
 
   const photo = newestPhoto(message)
   let localPhoto = null
   if (photo) {
     try { localPhoto = await storePhoto(message, photo) }
-    catch (error) { console.warn(`Photo for message ${message.message_id} could not be saved: ${error.message}`) }
+    catch (error) { throw new Error(`Photo for message ${message.message_id} could not be saved; update retained for retry: ${error.message}`) }
   }
 
   const recordKey = message.media_group_id
@@ -310,11 +343,14 @@ async function processMessage(message, updateId, inbox) {
   const previous = previousIndex >= 0 ? inbox[previousIndex] : null
   const classifiedText = text || previous?.text || ''
   const classified = classify(classifiedText)
-  const chosenCategory = session.categoryTitle ?? previous?.selectedCategory ?? null
+  const chosenCategory = session?.categoryTitle ?? previous?.selectedCategory ?? null
   const record = {
     recordKey,
     sourceUpdateId: updateId,
     sourceMessageId: previous?.sourceMessageId ?? message.message_id,
+    sourceChatId: String(message.chat.id),
+    replyToMessageId: message.reply_to_message?.message_id ?? null,
+    replyContext: cleanText(message.reply_to_message ?? {}),
     sourceMessageIds: [...new Set([...(previous?.sourceMessageIds ?? []), message.message_id])],
     mediaGroupId: message.media_group_id ?? previous?.mediaGroupId ?? null,
     date: new Date(message.date * 1000).toISOString(),
@@ -365,7 +401,23 @@ async function runBot() {
     throw new Error(`Configured group must be exactly: ${authorizedGroupTitle}`)
   }
   console.log(`Listening as @${me.username}; private inbox: ${path.relative(projectRoot, inboxFile)}`)
-  console.log(`Capturing only direct replies to category prompts in: ${targetGroup.title}`)
+  console.log(`Capture mode: ${automaticCapture ? 'automatic group reports' : 'direct category replies'}; group: ${targetGroup.title}`)
+  const membership = await telegram('getChatMember', { chat_id: groupId, user_id: me.id })
+  const receivesOrdinaryMessages = Boolean(me.can_read_all_group_messages || membership.status === 'administrator')
+  let lastSuccessfulPollAt = null
+  const writeHealth = (extra = {}) => writeJsonAtomically(healthFile, {
+    checkedAt: new Date().toISOString(),
+    groupTitle: targetGroup.title,
+    automaticCapture,
+    receivesOrdinaryMessages,
+    publication: 'pending-assistant-review',
+    ...(lastSuccessfulPollAt ? { lastSuccessfulPollAt } : {}),
+    ...extra,
+  })
+  await writeHealth({ receiverProcessId: process.pid, status: 'connected' })
+  if (automaticCapture && !me.can_read_all_group_messages && membership.status !== 'administrator') {
+    console.warn('ACTION REQUIRED: Telegram privacy mode prevents ordinary group report delivery. Disable bot privacy in BotFather, then remove and re-add the bot to this group, or grant administrator membership in this group.')
+  }
 
   while (true) {
     let updates
@@ -376,8 +428,11 @@ async function runBot() {
         timeout: 30,
         allowed_updates: ['message', 'edited_message', 'callback_query'],
       })
+      lastSuccessfulPollAt = new Date().toISOString()
+      await writeHealth({ receiverProcessId: process.pid, status: 'connected' })
     } catch (error) {
       console.error(`${error.message}. Retrying in 5 seconds.`)
+      await writeHealth({ receiverProcessId: process.pid, status: 'retrying', lastError: error.message })
       await pause(5000)
       continue
     }
@@ -390,6 +445,7 @@ async function runBot() {
         const changed = message ? await processMessage(message, update.update_id, inbox) : false
         if (changed) await writeJsonAtomically(inboxFile, inbox)
         state.lastUpdateId = update.update_id
+        state.lastReceivedAt = new Date().toISOString()
         await writeJsonAtomically(stateFile, state)
       } catch (error) {
         console.error(`Update ${update.update_id} failed: ${error.message}. Retrying without advancing the cursor.`)

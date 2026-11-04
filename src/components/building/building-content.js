@@ -1,5 +1,16 @@
 // Public copy and service routing for the interactive building model.
-// Geometry stays in building-model.js so service wording can be edited independently.
+// WebGL geometry stays in building-scene.js; building-model.js is the static fallback.
+export const constructionCopy = {
+  foundation: { shortLabel: 'پی', title: 'پایه‌ای برای آنچه بالا می‌رود.', description: 'پی‌ها و شناژها روی زمین شکل می‌گیرند؛ نخستین اتصال میان بستر و سازهٔ آینده.', elements: ['پی‌های منفرد و شناژهای رابط', 'آرماتورهای انتظار و پایهٔ ستون‌ها', 'کف تراز همکف'] },
+  structure: { shortLabel: 'اسکلت', title: 'ساختمان قد می‌کشد.', description: 'ستون‌ها و تیرها طبقه‌به‌طبقه بالا می‌روند. حالا حجم پنج‌طبقهٔ ساختمان و هستهٔ مرکزی آن دیده می‌شود.', elements: ['قاب‌ها، ستون‌ها و تیرهای پنج طبقه', 'اتصال ستون‌ها به پی', 'هستهٔ مرکزی ساختمان'] },
+  slabs: { shortLabel: 'سقف‌ها', title: 'هر طبقه، یک فضای تازه.', description: 'دال‌ها در تراز طبقات جای می‌گیرند و راه‌پله، طبقات را به هم متصل می‌کند.', elements: ['دال‌های طبقات و لبهٔ بالکن‌ها', 'پله‌ها و دست‌انداز راه‌پله', 'کف و سقف فضاهای ساختمان'] },
+  mechanical: { shortLabel: 'مکانیک', title: 'مسیر آب و هوا باز می‌شود.', description: 'لوله‌ها، رایزرها و کانال‌های هوا به اسکلت اضافه می‌شوند. در این مرحله، بخشی از سقف‌ها کنار می‌رود تا مسیر تأسیسات را در نمای داخلی ببینید.', elements: ['رایزر و انشعاب‌های لوله‌کشی', 'کانال‌های توزیع هوا', 'دریچه‌های تهویهٔ هر طبقه'] },
+  electrical: { shortLabel: 'برق', title: 'روشنایی به ساختمان می‌رسد.', description: 'مسیرهای برق در طبقات امتداد پیدا می‌کنند و تابلوها و چراغ‌ها سر جای خود قرار می‌گیرند. نمای داخلی، ارتباط این اجزا را آشکار می‌کند.', elements: ['رایزر و مسیر توزیع کابل', 'تابلوهای برق طبقات', 'چراغ‌ها و انشعاب‌های روشنایی'] },
+  architecture: { shortLabel: 'نما', title: 'حالا، چهرهٔ ساختمان.', description: 'دیوارها، شیشه‌ها، قاب پنجره‌ها و بالکن‌ها حجم ساختمان را کامل می‌کنند. با «دیدن داخل» می‌توانید دوباره اجزای درونی را ببینید.', elements: ['نمای چهار طرف و پنجره‌های قاب‌دار', 'بالکن، نرده و سایه‌بان ورودی', 'جداکننده‌های داخلی و تیغه‌های نما'] },
+  roof: { shortLabel: 'بام', title: 'آخرین تراز، بالای شهر.', description: 'جان‌پناه، دسترسی بام، تجهیزات تهویه و صفحه‌های خورشیدی روی آخرین سقف قرار می‌گیرند.', elements: ['جان‌پناه و اتاق دسترسی به بام', 'تجهیزات تهویه و فن‌ها', 'صفحه‌های خورشیدی مفهومی'] },
+  delivery: { shortLabel: 'تکمیل', label: 'ساختمان کامل', title: 'از یک زمین، تا یک ساختمان.', description: 'ورودی، مسیر پیاده و فضای سبز اضافه شده‌اند. ساختمان کامل است؛ آن را بچرخانید، نزدیک‌تر ببینید یا به هر مرحلهٔ ساخت برگردید.', elements: ['پلهٔ ورودی و کف‌سازی محوطه', 'درخت‌ها، نیمکت‌ها و روشنایی محوطه', 'هماهنگی معماری، سازه و تأسیسات'] },
+}
+
 export const buildingSystems = [
   {
     id: 'foundation',
@@ -95,11 +106,11 @@ export const serviceAssignments = {
   'محاسبات و طراحی سازه': ['structure', 'slabs'],
   'طراحی تأسیسات مکانیکی': ['mechanical'],
   'طراحی تأسیسات برقی': ['electrical'],
-  'طراحی مفهومی و فاز صفر': ['delivery'],
+  'طراحی مفهومی و فاز صفر': ['architecture', 'delivery'],
   'طراحی فاز یک و دو': ['architecture'],
-  'تهیهٔ نقشه‌های مصوب': ['architecture', 'delivery'],
-  'تهیهٔ نقشه‌های اجرایی چهار رشته': ['architecture', 'structure', 'mechanical', 'electrical'],
-  'تهیهٔ نقشه‌های چون‌ساخت (As-built)': ['delivery'],
+  'تهیهٔ نقشه‌های مصوب': ['architecture', 'structure', 'mechanical', 'electrical', 'delivery'],
+  'تهیهٔ نقشه‌های اجرایی چهار رشته': ['architecture', 'structure', 'slabs', 'mechanical', 'electrical'],
+  'تهیهٔ نقشه‌های چون‌ساخت (As-built)': ['architecture', 'structure', 'mechanical', 'electrical', 'delivery'],
   'جزئیات اجرایی و نقشه‌های ساخت': ['structure', 'architecture'],
   'نقشه‌برداری': ['foundation'],
   'خدمات شهرسازی': ['delivery'],
@@ -107,8 +118,8 @@ export const serviceAssignments = {
   'مشاورهٔ فنی به سازندگان': ['delivery'],
 
   'مطالعات و آزمایش مکانیک خاک': ['foundation'],
-  'آزمایش مصالح ساختمانی': ['structure'],
-  'نمونه‌گیری و کنترل بتن': ['structure', 'slabs'],
+  'آزمایش مصالح ساختمانی': ['foundation', 'structure', 'slabs', 'architecture'],
+  'نمونه‌گیری و کنترل بتن': ['foundation', 'structure', 'slabs'],
   'کنترل و بازرسی جوش': ['structure'],
   'گودبرداری': ['foundation'],
   'پایدارسازی گودهای عمیق': ['foundation'],
@@ -137,8 +148,8 @@ export const serviceAssignments = {
 
   'مشارکت در ساخت پروژه‌های ساختمانی': ['delivery'],
   'مشاوره و خدمات املاک': ['delivery'],
-  'بازسازی و مقاوم‌سازی': ['architecture', 'structure'],
-  'خدمات آتش‌نشانی': ['mechanical'],
+  'بازسازی و مقاوم‌سازی': ['foundation', 'architecture', 'structure'],
+  'خدمات آتش‌نشانی': ['mechanical', 'electrical'],
   'خدمات مجریان گاز': ['mechanical'],
   'خدمات آسانسور': ['mechanical', 'electrical'],
   'پنل خورشیدی': ['roof'],
