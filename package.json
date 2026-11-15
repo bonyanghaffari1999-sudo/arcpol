@@ -8,13 +8,16 @@
     "dev:sync": "npm run sync:telegram && npm run audit:public-data",
     "prebuild": "npm run sync:telegram && npm run audit:public-data",
     "build": "vite build",
+    "postbuild": "node scripts/generate-seo-output.mjs",
     "preview": "vite preview",
+    "db:migrate": "node scripts/migrate-json-to-mariadb.mjs",
     "sync:telegram": "node scripts/sync-telegram-export.mjs",
     "audit:public-data": "node scripts/audit-public-projects.mjs",
     "telegram:discover-group": "node scripts/telegram-group-bot.mjs --discover",
     "telegram:bot": "node scripts/telegram-group-bot.mjs"
   },
   "dependencies": {
+    "mariadb": "^3.5.5",
     "three": "^0.185.1",
     "vue": "^3.5.22"
   },

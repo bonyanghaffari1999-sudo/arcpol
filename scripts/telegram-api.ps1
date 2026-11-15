@@ -4,6 +4,7 @@ $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 [Console]::InputEncoding = $utf8NoBom
 [Console]::OutputEncoding = $utf8NoBom
 $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
+$statusCode = 0
 $envPath = Join-Path (Split-Path -Parent $PSScriptRoot) '.env.telegram.local'
 $envText = [System.IO.File]::ReadAllText($envPath)
 $tokenMatch = [regex]::Match($envText, '(?m)^\s*TELEGRAM_BOT_TOKEN\s*=\s*(.*?)\s*$')
@@ -21,16 +22,52 @@ if ($request.method -eq 'downloadFile') {
     throw 'Attachment destination is outside the private attachment folder.'
   }
   [System.IO.Directory]::CreateDirectory($attachmentRoot) | Out-Null
-  $response = Invoke-WebRequest -UseBasicParsing -Uri ("https://api.telegram.org/file/bot{0}/{1}" -f $token, $filePath) -Method Get -TimeoutSec 35 -OutFile $destination
-  $savedBytes = if (Test-Path -LiteralPath $destination) { (Get-Item -LiteralPath $destination).Length } else { 0 }
-  $body = [ordered]@{ savedBytes = $savedBytes }
+  $partialDestination = $destination + '.download'
+  try {
+    Remove-Item -LiteralPath $partialDestination -Force -ErrorAction SilentlyContinue
+    $response = Invoke-WebRequest -UseBasicParsing -Uri ("https://api.telegram.org/file/bot{0}/{1}" -f $token, $filePath) -Method Get -TimeoutSec 35 -OutFile $partialDestination
+    $statusCode = [int]$response.StatusCode
+    $savedBytes = if (Test-Path -LiteralPath $partialDestination) { (Get-Item -LiteralPath $partialDestination).Length } else { 0 }
+    Move-Item -LiteralPath $partialDestination -Destination $destination -Force
+    $body = [ordered]@{ savedBytes = $savedBytes }
+  } finally {
+    Remove-Item -LiteralPath $partialDestination -Force -ErrorAction SilentlyContinue
+  }
 } else {
-  $allowedMethods = @('getFile', 'getMe', 'getUpdates', 'getChat', 'getChatMember', 'sendMessage', 'answerCallbackQuery', 'setMyCommands')
+  $allowedMethods = @('getFile', 'getMe', 'getUpdates', 'getWebhookInfo', 'getChat', 'getChatMember', 'sendMessage', 'answerCallbackQuery', 'setMyCommands')
   if ($request.method -notin $allowedMethods) { throw 'Telegram API method is not allowed by the local receiver.' }
   $jsonBody = $request.parameters | ConvertTo-Json -Depth 30 -Compress
   $jsonBytes = [System.Text.Encoding]::UTF8.GetBytes($jsonBody)
-  $response = Invoke-WebRequest -UseBasicParsing -Uri ("https://api.telegram.org/bot{0}/{1}" -f $token, $request.method) -Method Post -ContentType 'application/json; charset=utf-8' -Body $jsonBytes -TimeoutSec 35
-  try { $body = $response.Content | ConvertFrom-Json } catch { $body = [ordered]@{ ok = $false; description = 'Telegram returned an unreadable response.' } }
+  try {
+    $response = Invoke-WebRequest -UseBasicParsing -Uri ("https://api.telegram.org/bot{0}/{1}" -f $token, $request.method) -Method Post -ContentType 'application/json; charset=utf-8' -Body $jsonBytes -TimeoutSec 35
+    $statusCode = [int]$response.StatusCode
+    try { $body = $response.Content | ConvertFrom-Json } catch { $body = [ordered]@{ ok = $false; description = 'Telegram returned an unreadable response.' } }
+  } catch {
+    $errorResponse = $_.Exception.Response
+    if ($errorResponse) {
+      $statusCode = [int]$errorResponse.StatusCode
+      try {
+        $reader = [System.IO.StreamReader]::new($errorResponse.GetResponseStream())
+        $responseContent = $reader.ReadToEnd()
+        $reader.Dispose()
+        $body = $responseContent | ConvertFrom-Json
+      } catch {
+        $body = [ordered]@{ ok = $false; description = 'Telegram returned an unreadable error response.' }
+      }
+    } else {
+      $description = 'Windows network transport failed.'
+      if ($_.Exception -is [System.Net.WebException]) {
+        switch ([string]$_.Exception.Status) {
+          'Timeout' { $description = 'Telegram network request timed out.' }
+          'NameResolutionFailure' { $description = 'Telegram hostname could not be resolved.' }
+          'ConnectFailure' { $description = 'Telegram connection could not be opened.' }
+          'TrustFailure' { $description = 'Telegram TLS certificate validation failed.' }
+          'SecureChannelFailure' { $description = 'Telegram TLS connection failed.' }
+        }
+      }
+      $body = [ordered]@{ ok = $false; description = $description }
+    }
+  }
 }
 
-[ordered]@{ statusCode = [int]$response.StatusCode; body = $body } | ConvertTo-Json -Depth 30 -Compress
+[ordered]@{ statusCode = $statusCode; body = $body } | ConvertTo-Json -Depth 30 -Compress

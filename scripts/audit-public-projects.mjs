@@ -166,9 +166,22 @@ for (const id of siteMedia.featuredProjectIds || []) {
   if (id !== null && !companyProjectIds.has(Number(id))) issues.push({ code: 'site-media', issue: `invalid-featured-project-${id}` })
 }
 
+const isCodedTelegramProject = (record) => record.source === 'field-reports' && /^G-\d+$/iu.test(record.code || '')
+const documentedProjectRecordKeys = records.flatMap((record) => {
+  if (isCodedTelegramProject(record)) {
+    const code = record.code.match(/^G-0*(\d+)$/iu)
+    return code ? [`telegram-project:${Number(code[1])}`] : []
+  }
+  if (!record.source) return [`previous-site-record:${record.id}`]
+  if (record.source === 'manual') return [`company-record:${record.id}`]
+  return []
+})
 const summary = {
-  previousCompanyProjects: records.filter((record) => !record.source || record.source === 'manual').length,
-  linkedTelegramProjects: records.filter((record) => record.source === 'field-reports').length,
+  previousSiteProjects: records.filter((record) => !record.source).length,
+  companyProjectRecordsAndGroups: records.filter((record) => !record.source || record.source === 'manual' || isCodedTelegramProject(record)).length,
+  linkedTelegramProjects: records.filter(isCodedTelegramProject).length,
+  uncodedTelegramPhotoEntries: records.filter((record) => record.source === 'field-reports' && !/^G-\d+$/iu.test(record.code || '')).length,
+  documentedProjectRecords: new Set(documentedProjectRecordKeys).size,
   independentTelegramReports: records.filter((record) => record.source === 'telegram-report').length,
   publicArticles: articles.length,
   totalPublicItems: records.length,

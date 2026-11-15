@@ -6,6 +6,7 @@ const props = defineProps({
   progress: { type: Number, default: 0 },
   reducedMotion: Boolean,
   label: { type: String, default: 'آماده‌سازی زمین' },
+  locale: { type: String, default: 'fa' },
   highlightedStages: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['select-stage'])
@@ -15,6 +16,7 @@ const failed = ref(false)
 const cutaway = ref(null)
 const stage = computed(() => Math.ceil(props.progress - 0.015))
 const isCutaway = computed(() => cutaway.value ?? [4, 5].includes(stage.value))
+const isEnglish = computed(() => props.locale === 'en')
 watch(stage, () => { cutaway.value = null })
 let scene = null
 let alive = true
@@ -66,37 +68,37 @@ onUnmounted(() => { alive = false; generation += 1; scene?.dispose() })
 <template>
   <div class="building-viewer">
     <div class="building-viewer-top">
-      <span class="building-viewer-state"><i aria-hidden="true"></i>{{ label }}{{ isCutaway ? ' · نمای داخلی' : '' }}</span>
-      <span class="building-viewer-type">{{ failed ? 'نمای جایگزین' : 'مدل سه‌بعدی' }}</span>
+      <span class="building-viewer-state"><i aria-hidden="true"></i>{{ label }}{{ isCutaway ? (isEnglish ? ' · cutaway view' : ' · نمای داخلی') : '' }}</span>
+      <span class="building-viewer-type">{{ failed ? (isEnglish ? 'Fallback view' : 'نمای جایگزین') : (isEnglish ? '3D model' : 'مدل سه‌بعدی') }}</span>
     </div>
     <div class="building-canvas-frame" :class="{ 'is-unavailable': failed }">
       <div
         ref="host" class="building-canvas" tabindex="0" role="group"
-        aria-label="مدل سه‌بعدی مفهومی ساختمان پنج‌طبقه؛ کلیک روی اجزا یا کلید Enter برای خدمات مرحلهٔ فعال؛ کلیدهای جهت برای چرخش و مثبت و منفی برای بزرگ‌نمایی."
+        :aria-label="isEnglish ? 'Conceptual 3D model of a five-storey building. Select a system or press Enter to explore the active stage; use the arrow keys to rotate and plus or minus to zoom.' : 'مدل سه‌بعدی مفهومی ساختمان پنج‌طبقه؛ کلیک روی اجزا یا کلید Enter برای خدمات مرحلهٔ فعال؛ کلیدهای جهت برای چرخش و مثبت و منفی برای بزرگ‌نمایی.'"
         aria-describedby="building-model-help" @keydown="onKeydown"
       ></div>
-      <div v-if="loading" class="building-loading" role="status">در حال آماده‌سازی ساختمان سه‌بعدی…</div>
+      <div v-if="loading" class="building-loading" role="status">{{ isEnglish ? 'Preparing the 3D building…' : 'در حال آماده‌سازی ساختمان سه‌بعدی…' }}</div>
       <div v-if="failed" class="building-fallback">
-        <svg :viewBox="BUILDING_VIEWBOX" role="img" aria-label="نمای شماتیک جایگزین ساختمان کامل؛ توضیح تمام مراحل در ادامه در دسترس است.">
+        <svg :viewBox="BUILDING_VIEWBOX" role="img" :aria-label="isEnglish ? 'Schematic fallback view of the complete building. Explanations of every stage follow below.' : 'نمای شماتیک جایگزین ساختمان کامل؛ توضیح تمام مراحل در ادامه در دسترس است.'">
           <g v-for="(markup, id) in buildingScene" :key="id" v-html="markup"></g>
         </svg>
-        <p>نمایش سه‌بعدی در این مرورگر در دسترس نیست. مراحل و خدمات را در ادامه ببینید.</p>
-        <button type="button" @click="initialize">تلاش دوباره</button>
+        <p>{{ isEnglish ? '3D rendering is not available in this browser. Explore the stages and services below.' : 'نمایش سه‌بعدی در این مرورگر در دسترس نیست. مراحل و خدمات را در ادامه ببینید.' }}</p>
+        <button type="button" @click="initialize">{{ isEnglish ? 'Try again' : 'تلاش دوباره' }}</button>
       </div>
-      <span v-if="!loading && !failed" class="building-drag-hint">کلیک: خدمات این بخش · کشیدن: چرخش مدل</span>
+      <span v-if="!loading && !failed" class="building-drag-hint">{{ isEnglish ? 'Select: explore this system · Drag: rotate' : 'کلیک: خدمات این بخش · کشیدن: چرخش مدل' }}</span>
       <div class="building-north" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M16 4 24 25 16 21 8 25Z"/><path d="M16 4V21"/></svg><span>N</span></div>
     </div>
-    <div class="building-viewer-toolbar" aria-label="کنترل نمای ساختمان">
+    <div class="building-viewer-toolbar" :aria-label="isEnglish ? 'Building view controls' : 'کنترل نمای ساختمان'">
       <div class="building-view-controls">
-        <button type="button" :disabled="failed || loading" aria-label="چرخش به راست" title="چرخش به راست" @click="scene?.rotate(0.35)"><svg viewBox="0 0 24 24"><path d="M20 10a8 8 0 1 0-1 8M20 4v6h-6"/></svg></button>
-        <button type="button" :disabled="failed || loading" aria-label="چرخش به چپ" title="چرخش به چپ" @click="scene?.rotate(-0.35)"><svg viewBox="0 0 24 24"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></svg></button>
-        <button type="button" :disabled="failed || loading" aria-label="بزرگ‌نمایی" title="بزرگ‌نمایی" @click="scene?.zoom(-0.1)"><svg viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></svg></button>
-        <button type="button" :disabled="failed || loading" aria-label="کوچک‌نمایی" title="کوچک‌نمایی" @click="scene?.zoom(0.1)"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
-        <button type="button" :disabled="failed || loading" aria-label="بازنشانی زاویهٔ دید" title="بازنشانی زاویهٔ دید" @click="scene?.reset()"><svg viewBox="0 0 24 24"><path d="m12 3 9 5v9l-9 5-9-5V8l9-5Zm0 10 9-5M12 13 3 8m9 5v9"/></svg></button>
+        <button type="button" :disabled="failed || loading" :aria-label="isEnglish ? 'Rotate right' : 'چرخش به راست'" :title="isEnglish ? 'Rotate right' : 'چرخش به راست'" @click="scene?.rotate(0.35)"><svg viewBox="0 0 24 24"><path d="M20 10a8 8 0 1 0-1 8M20 4v6h-6"/></svg></button>
+        <button type="button" :disabled="failed || loading" :aria-label="isEnglish ? 'Rotate left' : 'چرخش به چپ'" :title="isEnglish ? 'Rotate left' : 'چرخش به چپ'" @click="scene?.rotate(-0.35)"><svg viewBox="0 0 24 24"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></svg></button>
+        <button type="button" :disabled="failed || loading" :aria-label="isEnglish ? 'Zoom in' : 'بزرگ‌نمایی'" :title="isEnglish ? 'Zoom in' : 'بزرگ‌نمایی'" @click="scene?.zoom(-0.1)"><svg viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></svg></button>
+        <button type="button" :disabled="failed || loading" :aria-label="isEnglish ? 'Zoom out' : 'کوچک‌نمایی'" :title="isEnglish ? 'Zoom out' : 'کوچک‌نمایی'" @click="scene?.zoom(0.1)"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+        <button type="button" :disabled="failed || loading" :aria-label="isEnglish ? 'Reset view' : 'بازنشانی زاویهٔ دید'" :title="isEnglish ? 'Reset view' : 'بازنشانی زاویهٔ دید'" @click="scene?.reset()"><svg viewBox="0 0 24 24"><path d="m12 3 9 5v9l-9 5-9-5V8l9-5Zm0 10 9-5M12 13 3 8m9 5v9"/></svg></button>
       </div>
-      <button type="button" class="building-cutaway" :disabled="failed || loading" :aria-pressed="isCutaway" @click="cutaway = !isCutaway">{{ isCutaway ? 'نمای کامل' : 'دیدن داخل' }}<svg viewBox="0 0 24 24"><path d="m12 3 9 5v9l-9 5-9-5V8l9-5Zm0 0v19M3 8l9 5 9-5"/></svg></button>
+      <button type="button" class="building-cutaway" :disabled="failed || loading" :aria-pressed="isCutaway" @click="cutaway = !isCutaway">{{ isEnglish ? (isCutaway ? 'Full view' : 'Cutaway view') : (isCutaway ? 'نمای کامل' : 'دیدن داخل') }}<svg viewBox="0 0 24 24"><path d="m12 3 9 5v9l-9 5-9-5V8l9-5Zm0 0v19M3 8l9 5 9-5"/></svg></button>
     </div>
-    <p id="building-model-help" class="building-model-disclaimer">مدل مفهومی است؛ نقشهٔ اجرایی یا پروژهٔ واقعی شرکت نیست.</p>
+    <p id="building-model-help" class="building-model-disclaimer">{{ isEnglish ? 'This is a conceptual model, not a construction drawing or a real company project.' : 'مدل مفهومی است؛ نقشهٔ اجرایی یا پروژهٔ واقعی شرکت نیست.' }}</p>
   </div>
 </template>
 

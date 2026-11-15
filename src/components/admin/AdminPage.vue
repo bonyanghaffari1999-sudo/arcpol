@@ -2,11 +2,15 @@
 import { computed, ref, watch } from 'vue'
 import AdminRecordEditor from './AdminRecordEditor.vue'
 import AdminMediaLibrary from './AdminMediaLibrary.vue'
+import TelegramProjectInbox from './TelegramProjectInbox.vue'
 import { createAdminPatch, deleteCollectionRecord, setCollectionRecord } from '../../admin-data.js'
+import { findServiceEvidence } from '../../service-details.js'
+import { countDocumentedProjectRecords, isCodedTelegramProject, isDocumentedCompanyProject, isIndependentProjectReport } from '../../project-archive.js'
 
 const props = defineProps({
   enabled: { type: Boolean, required: true },
   hasBackup: { type: Boolean, required: true },
+  storage: { type: String, required: true },
   overrides: { type: Object, required: true },
   baseProjects: { type: Array, required: true },
   projects: { type: Array, required: true },
@@ -31,6 +35,7 @@ const props = defineProps({
 const sections = [
   { id: 'overview', label: 'نمای کلی' },
   { id: 'projects', label: 'پروژه‌ها و گزارش‌ها' },
+  { id: 'telegram-inbox', label: 'صندوق تلگرام' },
   { id: 'articles', label: 'مقاله‌ها' },
   { id: 'site', label: 'اطلاعات و خدمات سایت' },
   { id: 'media', label: 'رسانه‌ها و تصویرها' },
@@ -40,7 +45,7 @@ const sections = [
 ]
 const section = ref('overview')
 const quickLinks = [
-  { id: 'projects', title: 'پروژه‌ها و گزارش‌ها', detail: 'پروژه‌های شرکت را جدا از گزارش‌های تصویری مدیریت کنید.', number: '01' },
+  { id: 'projects', title: 'پروژه‌ها و گزارش‌ها', detail: 'گروه‌های پروژهٔ کددار را از گزارش‌های مستقل یا بدون کد جدا ببینید.', number: '01' },
   { id: 'articles', title: 'مقاله‌ها و دانش فنی', detail: 'عنوان، متن و پیوست‌های مقاله را پیدا و ویرایش کنید.', number: '02' },
   { id: 'site', title: 'صفحه‌ها و خدمات', detail: 'معرفی شرکت، دسته‌های خدمات و دامنه‌های همکاری را تغییر دهید.', number: '03' },
   { id: 'media', title: 'کتابخانهٔ تصویرها', detail: 'تصویرها، نشان سایت و عکس‌های انتخاب‌شدهٔ صفحهٔ اصلی را مدیریت کنید.', number: '04' },
@@ -71,6 +76,107 @@ const teamDirectoryPhotoOptions = computed(() => {
   }
   return Array.from(options, ([key, label]) => ({ key, label }))
 })
+const serviceOptions = computed(() => [...new Set([
+  ...(contentDraft.value.serviceGroups || []).flatMap((group) => group.items || []),
+  ...(contentDraft.value.additionalServices || []),
+].filter(Boolean))])
+function projectImages(record) {
+  return [...new Set([...(record?.images || []), ...(record?.timeline || []).map((event) => event.image)].filter(Boolean))]
+}
+const exampleProjectOptions = computed(() => props.projects
+  .filter((record) => record.adminStatus !== 'draft')
+  .map((record) => ({
+    key: projectKey(record),
+    record,
+    images: projectImages(record),
+    label: [record.code || `پروژه ${record.id}`, record.type, record.usage].filter(Boolean).join(' · '),
+    searchText: normalizeServicePickerSearch([record.code, record.id, record.type, record.usage].filter(Boolean).join(' ')),
+  }))
+  .filter((item) => item.images.length))
+const serviceExampleProjectSearch = ref('')
+const serviceExampleProjectLimit = ref(36)
+const filteredExampleProjectOptions = computed(() => {
+  const query = normalizeServicePickerSearch(serviceExampleProjectSearch.value)
+  return query ? exampleProjectOptions.value.filter((item) => item.searchText.includes(query)) : exampleProjectOptions.value
+})
+const visibleExampleProjectOptions = computed(() => {
+  const visible = filteredExampleProjectOptions.value.slice(0, serviceExampleProjectLimit.value)
+  const selected = exampleProjectOptions.value.find((item) => item.key === serviceExampleProjectKey.value)
+  return selected && !visible.some((item) => item.key === selected.key) ? [selected, ...visible] : visible
+})
+const serviceExampleProjectKey = ref('')
+const serviceExampleImage = ref('')
+const serviceExampleService = ref('')
+const serviceExampleSearch = ref('')
+const serviceExampleImageLimit = ref(18)
+const selectedExampleProject = computed(() => exampleProjectOptions.value.find((item) => item.key === serviceExampleProjectKey.value) || null)
+const selectedExampleImageOptions = computed(() => {
+  const project = selectedExampleProject.value
+  if (!project) return []
+  const latestEventByImage = new Map()
+  for (const event of project.record.timeline || []) {
+    if (!event.image) continue
+    const current = latestEventByImage.get(event.image)
+    if (!current || (Date.parse(event.date) || 0) > (Date.parse(current.date) || 0)) latestEventByImage.set(event.image, event)
+  }
+  return project.images.map((image, index) => {
+    const event = latestEventByImage.get(image)
+    return {
+      image,
+      number: index + 1,
+      date: event?.date || project.record.updatedAt || '',
+      title: event?.title || '',
+    }
+  }).sort((left, right) => (Date.parse(right.date) || 0) - (Date.parse(left.date) || 0) || right.number - left.number)
+})
+const filteredExampleImageOptions = computed(() => {
+  const query = serviceExampleSearch.value.trim().toLocaleLowerCase('fa-IR').replaceAll('ي', 'ی').replaceAll('ك', 'ک')
+  if (!query) return selectedExampleImageOptions.value
+  return selectedExampleImageOptions.value.filter((item) => `${item.title} ${item.date} ${item.number}`.toLocaleLowerCase('fa-IR').replaceAll('ي', 'ی').replaceAll('ك', 'ک').includes(query))
+})
+const visibleExampleImageOptions = computed(() => filteredExampleImageOptions.value.slice(0, serviceExampleImageLimit.value))
+const savedServiceExamples = computed(() => (contentDraft.value.serviceExamples || []).map((item, index) => ({
+  ...item,
+  index,
+  project: exampleProjectOptions.value.find((project) => project.key === item.projectKey) || null,
+})))
+const serviceEvidenceEntries = computed(() => {
+  const publicProjects = props.projects.filter((record) => record.adminStatus !== 'draft')
+  return serviceOptions.value.map((service) => {
+    const hasArchiveEvidence = findServiceEvidence(service, publicProjects).length > 0
+    const hasCompanySelection = (contentDraft.value.serviceExamples || []).some((item) => {
+      if (item.service !== service) return false
+      const project = exampleProjectOptions.value.find((option) => option.key === item.projectKey)
+      return Boolean(project?.images.includes(item.image))
+    })
+    return { service, hasArchiveEvidence, hasCompanySelection, hasExample: hasArchiveEvidence || hasCompanySelection }
+  })
+})
+const servicesAwaitingSelection = computed(() => serviceEvidenceEntries.value.filter((item) => !item.hasExample).map((item) => item.service))
+const serviceEvidenceCoverage = computed(() => ({
+  total: serviceEvidenceEntries.value.length,
+  withExamples: serviceEvidenceEntries.value.filter((item) => item.hasExample).length,
+  awaitingSelection: servicesAwaitingSelection.value.length,
+}))
+function chooseServiceExample(service) {
+  if (!serviceOptions.value.includes(service)) return
+  serviceExampleService.value = service
+  serviceExampleProjectKey.value = ''
+  serviceExampleImage.value = ''
+  serviceExampleProjectSearch.value = ''
+}
+watch(serviceExampleProjectKey, () => {
+  serviceExampleImage.value = ''
+  serviceExampleSearch.value = ''
+  serviceExampleImageLimit.value = 18
+  serviceExampleProjectSearch.value = ''
+})
+watch(serviceExampleSearch, () => { serviceExampleImageLimit.value = 18 })
+watch(serviceExampleProjectSearch, () => { serviceExampleProjectLimit.value = 36 })
+
+function normalizeServicePickerSearch(value) {
+  return String(value ?? '').toLocaleLowerCase('fa-IR').replaceAll('ي', 'ی').replaceAll('ك', 'ک').replace(/\s+/g, ' ').trim()
+}
 
 function copy(value) {
   return JSON.parse(JSON.stringify(value))
@@ -80,17 +186,26 @@ const projectKey = (record) => props.projectAdminKey(record)
 const rows = computed(() => section.value === 'projects' ? props.projects : props.articles)
 const sourceCounts = computed(() => ({
   all: props.projects.length,
-  company: props.projects.filter((record) => !record.source || record.source === 'manual').length,
-  linked: props.projects.filter((record) => record.source === 'field-reports').length,
-  independent: props.projects.filter((record) => record.source === 'telegram-report').length,
+  company: countDocumentedProjectRecords(props.projects),
+  linked: props.projects.filter(isCodedTelegramProject).length,
+  independent: props.projects.filter(isIndependentProjectReport).length,
+}))
+const publicProjectRecords = computed(() => props.projects.filter((record) => record.adminStatus !== 'draft'))
+const publicArchiveCounts = computed(() => ({
+  documented: countDocumentedProjectRecords(publicProjectRecords.value),
+  previousSite: publicProjectRecords.value.filter((record) => !record.source).length,
+  manual: publicProjectRecords.value.filter((record) => record.source === 'manual').length,
+  codedTelegram: publicProjectRecords.value.filter(isCodedTelegramProject).length,
+  independentReports: publicProjectRecords.value.filter((record) => record.source === 'telegram-report').length,
+  uncodedPhotoEntries: publicProjectRecords.value.filter((record) => record.source === 'field-reports' && !isCodedTelegramProject(record)).length,
 }))
 const filteredRecords = computed(() => {
   const query = search.value.trim().toLocaleLowerCase('fa-IR')
   return rows.value.filter((record) => {
     if (section.value === 'projects') {
-      if (projectSource.value === 'company' && record.source && record.source !== 'manual') return false
-      if (projectSource.value === 'linked' && record.source !== 'field-reports') return false
-      if (projectSource.value === 'independent' && record.source !== 'telegram-report') return false
+      if (projectSource.value === 'company' && !isDocumentedCompanyProject(record)) return false
+      if (projectSource.value === 'linked' && !isCodedTelegramProject(record)) return false
+      if (projectSource.value === 'independent' && !isIndependentProjectReport(record)) return false
     }
     if (!query) return true
     const text = section.value === 'projects'
@@ -113,8 +228,8 @@ const selectedArticleDetail = computed(() => {
 })
 const draftCount = computed(() => [...props.projects, ...props.articles].filter((record) => record.adminStatus === 'draft').length)
 const pageMetrics = computed(() => [
-  { label: 'پروژه‌های شرکت', value: sourceCounts.value.company },
-  { label: 'گزارش‌های تصویری', value: sourceCounts.value.linked + sourceCounts.value.independent },
+  { label: 'سوابق و گروه‌های پروژه', value: publicArchiveCounts.value.documented, note: `${publicArchiveCounts.value.previousSite.toLocaleString('fa-IR')} رکورد سایت پیشین + ${publicArchiveCounts.value.codedTelegram.toLocaleString('fa-IR')} گروه کددار${publicArchiveCounts.value.manual ? ` + ${publicArchiveCounts.value.manual.toLocaleString('fa-IR')} رکورد دستی` : ''}` },
+  { label: 'گزارش‌های مستقل و بدون کد', value: publicArchiveCounts.value.independentReports + publicArchiveCounts.value.uncodedPhotoEntries, note: `${publicArchiveCounts.value.independentReports.toLocaleString('fa-IR')} گزارش مستقل + ${publicArchiveCounts.value.uncodedPhotoEntries.toLocaleString('fa-IR')} ورودی بدون کد` },
   { label: 'مقاله', value: props.articles.length },
   { label: 'پیش‌نویس', value: draftCount.value },
 ])
@@ -283,11 +398,66 @@ async function commit(next, message) {
     await props.saveOverrides(next)
     dirty.value = false
     setStatus(message)
+    return true
   } catch (error) {
     setError(error)
+    return false
   } finally {
     busy.value = false
   }
+}
+
+async function createTelegramDraft(item) {
+  if (!item?.recordKey || (!item.text && !item.photoUrls?.length)) throw new Error('این پیام متن یا عکسی برای پیش‌نویس ندارد.')
+  const id = maxId(props.projects) + 1
+  const record = {
+    id,
+    code: '',
+    source: 'telegram-report',
+    adminStatus: 'draft',
+    status: 'history',
+    type: 'گزارش تصویری',
+    address: '',
+    usage: 'ثبت‌نشده',
+    description: 'پیش‌نویس خصوصی از گزارش تلگرام؛ متن و جزئیات منبع در صندوق خصوصی تلگرام بررسی شود.',
+    tags: [],
+    services: [],
+    updatedAt: item.editedAt || item.date || new Date().toISOString(),
+    timeline: (item.photoUrls || []).map((image) => ({
+      date: item.editedAt || item.date || new Date().toISOString(),
+      title: 'گزارش از تلگرام',
+      summary: '',
+      focus: '',
+      image,
+      status: 'logged',
+    })),
+    images: item.photoUrls || [],
+    finalImage: null,
+  }
+  const next = copy(props.overrides)
+  const collection = { ...(next.projects || {}) }
+  collection.added = [...(collection.added || []), record]
+  next.projects = collection
+  const saved = await commit(next, 'پیش‌نویس گزارش تلگرام به پروژه‌ها افزوده شد؛ انتشار آن همچنان جداگانه است.')
+  if (!saved) return null
+  const response = await fetch('/api/admin/telegram-inbox/link', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recordKey: item.recordKey, projectId: id }),
+  })
+  const result = await response.json()
+  if (!response.ok) throw new Error(result.error || 'پیوند پیش‌نویس به گزارش تلگرام ذخیره نشد.')
+  return id
+}
+
+function openTelegramDraft(id) {
+  section.value = 'projects'
+  projectSource.value = 'all'
+  search.value = ''
+  selectedKey.value = `telegram-report:${id}`
+  dirty.value = false
+  errorMessage.value = ''
+  successMessage.value = ''
 }
 
 async function saveRecord(editedRecord) {
@@ -366,6 +536,55 @@ function updateAdditionalService(index, value) {
 
 function removeAdditionalService(index) {
   setContentValue(['additionalServices'], (contentDraft.value.additionalServices || []).filter((_, itemIndex) => itemIndex !== index))
+}
+
+function addServiceExample() {
+  if (!serviceExampleService.value || !selectedExampleProject.value || !serviceExampleImage.value) {
+    setError(new Error('خدمت، پروژه و تصویر را انتخاب کنید.'))
+    return
+  }
+  const examples = copy(contentDraft.value.serviceExamples || [])
+  if (examples.some((item) => item.service === serviceExampleService.value && item.projectKey === serviceExampleProjectKey.value && item.image === serviceExampleImage.value)) {
+    setError(new Error('این تصویر قبلاً برای همین خدمت انتخاب شده است.'))
+    return
+  }
+  examples.push({
+    id: `service-example-${Date.now()}`,
+    service: serviceExampleService.value,
+    projectKey: serviceExampleProjectKey.value,
+    image: serviceExampleImage.value,
+  })
+  setContentValue(['serviceExamples'], examples)
+  errorMessage.value = ''
+  successMessage.value = 'نمونه به فهرست تغییرهای ذخیره‌نشده افزوده شد.'
+}
+
+function exampleImageDate(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '' : new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium', timeZone: 'Asia/Tehran' }).format(date)
+}
+
+function updateServiceExample(index, field, value) {
+  const examples = copy(contentDraft.value.serviceExamples || [])
+  const item = examples[index]
+  if (!item) return
+  if (field === 'projectKey') {
+    const project = exampleProjectOptions.value.find((option) => option.key === value)
+    item.projectKey = value
+    item.image = project?.images[0] || ''
+  } else if (field === 'image') {
+    const project = exampleProjectOptions.value.find((option) => option.key === item.projectKey)
+    if (!project?.images.includes(value)) return
+    item.image = value
+  } else if (field === 'service' && serviceOptions.value.includes(value)) {
+    item.service = value
+  } else return
+  setContentValue(['serviceExamples'], examples)
+}
+
+function removeServiceExample(index) {
+  setContentValue(['serviceExamples'], (contentDraft.value.serviceExamples || []).filter((_, itemIndex) => itemIndex !== index))
 }
 
 function addTeamResponsibility() {
@@ -572,7 +791,8 @@ function formatDate(value) {
       </div>
       <div class="admin-head-actions">
         <span class="local-badge" :class="enabled ? 'is-enabled' : 'is-disabled'">{{ enabled ? 'فقط روی همین رایانه' : 'پنل محلی در دسترس نیست' }}</span>
-        <a class="admin-button admin-button-secondary" href="#/">بازگشت به سایت</a>
+        <span v-if="enabled" class="local-badge is-enabled">{{ storage === 'mariadb' ? 'ذخیره‌سازی MariaDB' : 'ذخیره‌سازی JSON محلی' }}</span>
+        <a class="admin-button admin-button-secondary" href="/">بازگشت به سایت</a>
         <button class="admin-button admin-button-secondary" type="button" :disabled="!enabled || !hasBackup || busy" @click="undoLastSave">بازگردانی آخرین ذخیره</button>
       </div>
     </header>
@@ -580,12 +800,12 @@ function formatDate(value) {
     <div v-if="!enabled" class="admin-offline" role="status">
       <h2>پنل فقط روی نسخهٔ محلی فعال است</h2>
       <p>این صفحه در نسخهٔ عمومی امکان ویرایش ندارد. سایت را با پیش‌نمایش توسعهٔ محلی باز کنید تا ذخیره‌سازی و پشتیبان‌گیری فعال شود.</p>
-      <a class="admin-button admin-button-primary" href="#/">رفتن به صفحهٔ اصلی</a>
+      <a class="admin-button admin-button-primary" href="/">رفتن به صفحهٔ اصلی</a>
     </div>
 
     <template v-else>
       <section class="admin-metrics" aria-label="نمای کلی اطلاعات سایت">
-        <div v-for="metric in pageMetrics" :key="metric.label"><span>{{ metric.label }}</span><strong>{{ metric.value.toLocaleString('fa-IR') }}</strong></div>
+        <div v-for="metric in pageMetrics" :key="metric.label"><span>{{ metric.label }}</span><strong>{{ metric.value.toLocaleString('fa-IR') }}</strong><small v-if="metric.note">{{ metric.note }}</small></div>
       </section>
 
       <div v-if="successMessage" class="admin-notice" role="status">{{ successMessage }}</div>
@@ -597,6 +817,7 @@ function formatDate(value) {
             <span>{{ item.label }}</span>
             <small v-if="item.id === 'overview'">شروع</small>
             <small v-if="item.id === 'projects'">{{ projects.length.toLocaleString('fa-IR') }}</small>
+            <small v-else-if="item.id === 'telegram-inbox'">LIVE</small>
             <small v-else-if="item.id === 'articles'">{{ articles.length.toLocaleString('fa-IR') }}</small>
             <small v-else-if="item.id === 'contact-requests'">{{ contactRequests.length.toLocaleString('fa-IR') }}</small>
             <small v-else-if="item.id === 'feedback'">{{ feedback.length.toLocaleString('fa-IR') }}</small>
@@ -607,7 +828,7 @@ function formatDate(value) {
 
         <section v-if="section === 'overview'" class="admin-overview">
           <div class="record-list-head">
-            <div><span class="admin-eyebrow">دسترسی سریع</span><h2>از کجا شروع کنیم؟</h2><p>بخش موردنظرت را انتخاب کن؛ پروژه‌های شرکت و گزارش‌های کارگاهی در فهرست جدا از هم قابل فیلتر هستند.</p></div>
+            <div><span class="admin-eyebrow">دسترسی سریع</span><h2>از کجا شروع کنیم؟</h2><p>سوابق پروژه و گروه‌های کددار را از گزارش‌های مستقل یا بدون کد جدا فیلتر کن.</p></div>
           </div>
           <div class="admin-quick-links">
             <button v-for="item in quickLinks" :key="item.id" class="admin-quick-card" type="button" @click="selectSection(item.id)">
@@ -627,7 +848,7 @@ function formatDate(value) {
           </div>
 
           <div v-if="section === 'projects'" class="source-filter" aria-label="فیلتر نوع رکورد">
-            <button v-for="filter in [{id:'all',label:'همه'}, {id:'company',label:'پروژه‌های شرکت'}, {id:'linked',label:'گزارش‌های مرتبط'}, {id:'independent',label:'گزارش‌های کارگاهی'}]" :key="filter.id" type="button" :aria-pressed="projectSource === filter.id" @click="selectProjectSource(filter.id)">{{ filter.label }} <small>{{ sourceCounts[filter.id].toLocaleString('fa-IR') }}</small></button>
+            <button v-for="filter in [{id:'all',label:'همهٔ رکوردها'}, {id:'company',label:'سوابق و گروه‌های پروژه'}, {id:'linked',label:'گروه‌های کددار تلگرام'}, {id:'independent',label:'گزارش‌های مستقل/بدون کد'}]" :key="filter.id" type="button" :aria-pressed="projectSource === filter.id" @click="selectProjectSource(filter.id)">{{ filter.label }} <small>{{ sourceCounts[filter.id].toLocaleString('fa-IR') }}</small></button>
           </div>
 
           <label class="admin-search"><span class="sr-only">جست‌وجو میان رکوردها</span><input v-model="search" type="search" placeholder="جست‌وجو با کد، عنوان، منطقه یا خدمت"><span aria-hidden="true">⌕</span></label>
@@ -657,6 +878,13 @@ function formatDate(value) {
           />
           <div v-else class="admin-empty-editor"><span>انتخاب رکورد</span><p>از فهرست کناری یک مورد را انتخاب کنید یا یک مورد تازه بسازید.</p></div>
         </section>
+
+        <TelegramProjectInbox
+          v-else-if="section === 'telegram-inbox'"
+          :projects="projects"
+          :create-draft="createTelegramDraft"
+          :open-draft="openTelegramDraft"
+        />
 
         <section v-else-if="section === 'site'" class="admin-site-content">
           <div class="record-list-head">
@@ -704,6 +932,89 @@ function formatDate(value) {
                   <button class="admin-remove-group" type="button" @click="removeServiceGroup(groupIndex)">برداشتن این دسته از سایت</button>
                 </div>
               </details>
+            </section>
+
+            <section class="admin-service-editor" aria-labelledby="admin-service-examples-title">
+              <div class="admin-subsection-head">
+                <div><span class="admin-eyebrow">نمونه‌های تصویری خدمات</span><h3 id="admin-service-examples-title">انتخاب تصویر مستند برای هر خدمت</h3><p>برای {{ serviceEvidenceCoverage.withExamples.toLocaleString('fa-IR') }} از {{ serviceEvidenceCoverage.total.toLocaleString('fa-IR') }} خدمت نمونهٔ آرشیوی یا انتخاب‌شده ثبت شده است؛ {{ serviceEvidenceCoverage.awaitingSelection.toLocaleString('fa-IR') }} خدمت دیگر برای نمایش تصویر مرتبط به انتخاب شرکت نیاز دارد. نمونهٔ دستی با برچسب «انتخاب‌شده توسط شرکت» دیده می‌شود و متن آرشیو را تغییر نمی‌دهد یا مرحله و نتیجه‌ای به پروژه نسبت نمی‌دهد.</p></div>
+              </div>
+              <details v-if="servicesAwaitingSelection.length" class="admin-pending-services">
+                <summary>
+                  <span>خدمات نیازمند بررسی تصویر</span>
+                  <span class="admin-pending-count">{{ servicesAwaitingSelection.length.toLocaleString('fa-IR') }}</span>
+                </summary>
+                <p>با انتخاب هر مورد، فقط نام خدمت در فرم پایین انتخاب می‌شود. تصویر به‌صورت خودکار وصل نمی‌شود؛ نمونه را فقط اگر واقعاً مربوط به همان خدمت است انتخاب و ذخیره کنید.</p>
+                <div class="admin-pending-service-list">
+                  <button v-for="service in servicesAwaitingSelection" :key="service" type="button" class="admin-pending-service" @click="chooseServiceExample(service)">{{ service }} <span aria-hidden="true">↓</span></button>
+                </div>
+              </details>
+              <div class="admin-service-example-form admin-form-grid">
+                <label class="admin-field">خدمت
+                  <select v-model="serviceExampleService">
+                    <option value="">انتخاب خدمت</option>
+                    <option v-for="service in serviceOptions" :key="service" :value="service">{{ service }}</option>
+                  </select>
+                </label>
+                <label class="admin-field admin-project-search">جست‌وجوی پروژه با کد، شناسه یا نوع خدمت
+                  <input v-model="serviceExampleProjectSearch" type="search" placeholder="مثلاً G-072 یا نظارت و اجرا">
+                </label>
+                <label class="admin-field">پروژهٔ ثبت‌شده
+                  <select v-model="serviceExampleProjectKey">
+                    <option value="">انتخاب پروژه</option>
+                    <option v-for="option in visibleExampleProjectOptions" :key="option.key" :value="option.key">{{ option.label }}</option>
+                  </select>
+                </label>
+                <button class="admin-button admin-button-secondary" type="button" :disabled="!serviceExampleService || !selectedExampleProject || !serviceExampleImage" @click="addServiceExample">افزودن نمونه</button>
+              </div>
+              <p class="admin-service-example-note" aria-live="polite">
+                {{ visibleExampleProjectOptions.length.toLocaleString('fa-IR') }} گزینه از {{ filteredExampleProjectOptions.length.toLocaleString('fa-IR') }} پروژهٔ منطبق نمایش داده می‌شود. فقط پروژه‌ای را انتخاب کنید که تصویرش واقعاً به خدمت مربوط است.
+              </p>
+              <button v-if="filteredExampleProjectOptions.length > serviceExampleProjectLimit" class="admin-button admin-button-secondary" type="button" @click="serviceExampleProjectLimit += 36">نمایش پروژه‌های بیشتر ({{ serviceExampleProjectLimit.toLocaleString('fa-IR') }} از {{ filteredExampleProjectOptions.length.toLocaleString('fa-IR') }})</button>
+              <p v-else-if="serviceExampleProjectSearch && !filteredExampleProjectOptions.length" class="admin-service-example-note">پروژه‌ای با این عبارت پیدا نشد؛ کد یا عبارت کوتاه‌تری را امتحان کنید.</p>
+              <div v-if="selectedExampleProject" class="admin-service-image-picker">
+                <label class="admin-field">جست‌وجوی تصویر بر اساس عنوان یا تاریخ گزارش
+                  <input v-model="serviceExampleSearch" type="search" placeholder="مثلاً تیغه‌چینی یا تاریخ بازدید">
+                </label>
+                <div class="admin-service-image-grid" role="group" aria-label="انتخاب تصویر از پروژهٔ ثبت‌شده">
+                  <button v-for="image in visibleExampleImageOptions" :key="image.image" type="button" class="admin-service-image-choice" :class="{ 'is-selected': serviceExampleImage === image.image }" :aria-pressed="serviceExampleImage === image.image" :aria-label="`انتخاب تصویر ${image.number.toLocaleString('fa-IR')}${image.title ? `، ${image.title}` : ''}`" @click="serviceExampleImage = image.image">
+                    <img :src="image.image" alt="" width="180" height="135" loading="lazy">
+                    <span>{{ image.title || `تصویر ${image.number.toLocaleString('fa-IR')}` }}</span>
+                    <small v-if="image.date">{{ exampleImageDate(image.date) }}</small>
+                  </button>
+                </div>
+                <p v-if="!visibleExampleImageOptions.length" class="admin-service-example-note">تصویری با این عبارت پیدا نشد؛ عبارت کوتاه‌تری جست‌وجو کنید.</p>
+                <button v-else-if="visibleExampleImageOptions.length < filteredExampleImageOptions.length" class="admin-button admin-button-secondary" type="button" @click="serviceExampleImageLimit += 18">نمایش تصویرهای بیشتر ({{ visibleExampleImageOptions.length.toLocaleString('fa-IR') }} از {{ filteredExampleImageOptions.length.toLocaleString('fa-IR') }})</button>
+                <p v-if="serviceExampleImage" class="admin-service-example-note">تصویر انتخاب‌شده: {{ selectedExampleImageOptions.find((item) => item.image === serviceExampleImage)?.title || 'تصویر پروژه' }}</p>
+              </div>
+              <p v-else class="admin-service-example-note">ابتدا یک پروژه انتخاب کنید تا تصویرهای ثبت‌شدهٔ آن برای بررسی نمایش داده شوند.</p>
+              <p class="admin-service-example-note">انتخاب شرکت برای صفحهٔ خدمت است؛ منبع اصلی همچنان صفحهٔ همان پروژه می‌ماند. پیش از ذخیره، موارد را مرور کنید.</p>
+              <div v-if="savedServiceExamples.length" class="admin-service-example-list">
+                <div v-for="entry in savedServiceExamples" :key="entry.id || entry.index" class="admin-service-example-row">
+                  <img v-if="entry.project && entry.image" :src="entry.image" alt="پیش‌نمایش تصویر انتخاب‌شده" loading="lazy">
+                  <div class="admin-service-example-fields">
+                    <label class="admin-field">خدمت
+                      <select :value="entry.service" @change="updateServiceExample(entry.index, 'service', $event.target.value)">
+                        <option v-if="!serviceOptions.includes(entry.service)" :value="entry.service">{{ entry.service }} · خارج از فهرست فعلی</option>
+                        <option v-for="service in serviceOptions" :key="service" :value="service">{{ service }}</option>
+                      </select>
+                    </label>
+                    <label class="admin-field">پروژه
+                      <select :value="entry.projectKey" @change="updateServiceExample(entry.index, 'projectKey', $event.target.value)">
+                        <option v-if="!entry.project" :value="entry.projectKey" disabled>رکورد این پروژه در فهرست فعلی نیست</option>
+                        <option v-for="option in exampleProjectOptions" :key="option.key" :value="option.key">{{ option.label }}</option>
+                      </select>
+                    </label>
+                    <label class="admin-field field-wide">تصویر
+                      <select :value="entry.image" :disabled="!entry.project" @change="updateServiceExample(entry.index, 'image', $event.target.value)">
+                        <option v-if="entry.project && !entry.project.images.includes(entry.image)" :value="entry.image" disabled>این تصویر در رکورد فعلی پروژه نیست</option>
+                        <option v-for="(image, imageIndex) in entry.project?.images || []" :key="image" :value="image">تصویر {{ (imageIndex + 1).toLocaleString('fa-IR') }}</option>
+                      </select>
+                    </label>
+                  </div>
+                  <button class="admin-icon-button" type="button" :aria-label="`حذف نمونهٔ ${entry.service || 'خدمت'}`" @click="removeServiceExample(entry.index)">×</button>
+                </div>
+              </div>
+              <p v-else class="service-evidence-empty">هنوز نمونه‌ای انتخاب نشده است. تصویرها فقط پس از انتخاب و ذخیره در صفحهٔ عمومی نمایش داده می‌شوند.</p>
             </section>
 
             <section class="admin-service-editor" aria-labelledby="admin-team-editor-title">
@@ -859,6 +1170,7 @@ function formatDate(value) {
 .admin-metrics div:last-child { border-inline-end: 0; }
 .admin-metrics span { color: var(--text-secondary); font-size: var(--text-small); }
 .admin-metrics strong { color: var(--brand-forest); font-size: var(--text-metric); font-weight: 500; }
+.admin-metrics small { color: var(--text-subtle); font-size: var(--text-caption); line-height: var(--line-body); }
 .admin-notice, .admin-error { padding: var(--space-3) var(--space-4); border-inline-start: 3px solid var(--brand-green); background: var(--surface-mint); color: var(--brand-forest); }
 .admin-error { border-color: var(--status-danger); background: var(--surface-danger); color: var(--status-danger); }
 .admin-workspace { display: grid; grid-template-columns: minmax(10rem, 14rem) minmax(19rem, 23rem) minmax(0, 1fr); min-height: 42rem; border: 1px solid var(--border-subtle); background: var(--surface-paper); }
@@ -944,6 +1256,15 @@ function formatDate(value) {
 .admin-subsection-head h3 { margin: var(--space-1) 0; color: var(--text-primary); font-size: var(--text-section-title); font-weight: 500; }
 .admin-subsection-head p { max-width: 45rem; margin: 0; color: var(--text-secondary); font-size: var(--text-small); line-height: var(--line-body); }
 .admin-service-editor { display: grid; gap: var(--space-3); margin-top: var(--space-6); }
+.admin-pending-services { border: 1px solid var(--border-subtle); background: var(--surface-paper); }
+.admin-pending-services > summary { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 48px; padding: var(--space-2) var(--space-4); color: var(--brand-forest); font-size: var(--text-small); cursor: pointer; }
+.admin-pending-services > summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.admin-pending-count { display: grid; min-width: 28px; min-height: 28px; place-items: center; border-radius: 999px; background: var(--surface-mint); color: var(--brand-forest); font-size: var(--text-caption); }
+.admin-pending-services > p { margin: 0; padding: 0 var(--space-4) var(--space-3); color: var(--text-secondary); font-size: var(--text-caption); line-height: var(--line-body); }
+.admin-pending-service-list { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: 0 var(--space-4) var(--space-4); }
+.admin-pending-service { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); min-height: 44px; padding: var(--space-2) var(--space-3); border: 1px solid var(--border-subtle); background: var(--surface-ivory); color: var(--text-primary); font: inherit; font-size: var(--text-small); cursor: pointer; }
+.admin-pending-service:hover { border-color: var(--brand-sage); background: var(--surface-mint); }
+.admin-pending-service:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .admin-service-group { border: 1px solid var(--border-subtle); background: var(--surface-paper); }
 .admin-service-group > summary { min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) var(--space-4); cursor: pointer; list-style: none; }
 .admin-service-group > summary::-webkit-details-marker { display: none; }
@@ -959,6 +1280,25 @@ function formatDate(value) {
 .admin-service-item-row { display: flex; align-items: center; gap: var(--space-2); }
 .admin-service-item-row .admin-field { flex: 1 1 auto; }
 .admin-service-item-row .admin-field input { min-height: 44px; }
+.admin-service-example-form { align-items: end; padding: var(--space-4); border: 1px solid var(--border-subtle); background: var(--surface-ivory); }
+.admin-service-example-form select, .admin-service-example-fields select { min-height: 44px; }
+.admin-project-search { grid-column: 1 / -1; }
+.admin-project-search input { min-height: 44px; }
+.admin-service-image-picker { display: grid; gap: var(--space-3); min-width: 0; }
+.admin-service-image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: var(--space-2); max-height: 380px; overflow: auto; padding: var(--space-1); border: 1px solid var(--border-subtle); background: var(--surface-paper); }
+.admin-service-image-choice { display: grid; align-content: start; gap: var(--space-1); min-width: 0; padding: var(--space-1); border: 1px solid var(--border-subtle); background: var(--surface-paper); color: var(--text-secondary); text-align: right; cursor: pointer; }
+.admin-service-image-choice:hover { border-color: var(--brand-sage); background: var(--surface-mint); }
+.admin-service-image-choice:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+.admin-service-image-choice.is-selected { border: 2px solid var(--brand-green); background: var(--surface-mint); color: var(--brand-forest); }
+.admin-service-image-choice img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--surface-soft); }
+.admin-service-image-choice span { display: -webkit-box; overflow: hidden; font-size: var(--text-caption); line-height: var(--line-body); -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.admin-service-image-choice small { color: var(--text-subtle); font-size: 0.68rem; }
+.admin-service-example-note { margin: 0; color: var(--text-secondary); font-size: var(--text-caption); line-height: var(--line-body); }
+.admin-service-example-list { display: grid; gap: var(--space-2); }
+.admin-service-example-row { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border-subtle); background: var(--surface-paper); }
+.admin-service-example-row > img { width: 96px; aspect-ratio: 4 / 3; object-fit: cover; background: var(--surface-soft); }
+.admin-service-example-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-3); min-width: 0; }
+.admin-service-example-fields .field-wide { grid-column: 1 / -1; }
 .admin-team-directory-row { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.15fr) minmax(0, 1fr) auto; align-items: end; gap: var(--space-3); padding-block: var(--space-3); border-top: 1px solid var(--border-subtle); }
 .admin-team-directory-row .admin-field { min-width: 0; }
 .admin-team-directory-row input, .admin-team-directory-row select { min-height: 44px; }
@@ -974,6 +1314,9 @@ function formatDate(value) {
   .admin-workspace { grid-template-columns: 12rem minmax(18rem, 22rem) minmax(0, 1fr); }
   .admin-editor-pane, .admin-site-content, .admin-feedback-section, .admin-contact-requests-section, .admin-trash-section { padding: var(--space-4); }
   .admin-team-directory-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-service-example-row { grid-template-columns: 80px minmax(0, 1fr) auto; }
+  .admin-service-example-row > img { width: 80px; }
+  .admin-service-image-grid { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); }
   .admin-team-directory-actions { grid-column: 1 / -1; }
 }
 @media (max-width: 820px) {
@@ -1000,6 +1343,11 @@ function formatDate(value) {
   .admin-subsection-head { align-items: stretch; flex-direction: column; }
   .admin-service-group > summary > span:first-child { align-items: flex-start; flex-direction: column; gap: var(--space-1); }
   .admin-team-directory-row { grid-template-columns: minmax(0, 1fr); }
+  .admin-service-example-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .admin-service-example-row > img { grid-column: 1 / -1; width: min(100%, 260px); }
+  .admin-service-image-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: 320px; }
+  .admin-service-example-fields { grid-template-columns: minmax(0, 1fr); }
+  .admin-service-example-fields .field-wide { grid-column: auto; }
   .admin-team-directory-actions { justify-content: flex-start; }
 }
 </style>

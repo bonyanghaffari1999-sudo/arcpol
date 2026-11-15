@@ -1,8 +1,10 @@
 <script setup>
 import { computed, nextTick, onUnmounted, ref } from 'vue'
 import { normalizeServiceText } from './building-service-map.js'
+import { serviceGroupsEn, serviceNamesEn } from '../../i18n/services-en.js'
+import { formatNumber, localizeDigits } from '../../i18n/numbers.js'
 
-const props = defineProps({ services: { type: Array, required: true }, chapters: { type: Array, required: true } })
+const props = defineProps({ services: { type: Array, required: true }, chapters: { type: Array, required: true }, locale: { type: String, default: 'fa' } })
 const emit = defineEmits(['select'])
 const dialog = ref(null)
 const searchInput = ref(null)
@@ -13,20 +15,23 @@ let previousOverflow = ''
 let locked = false
 let selectionPending = false
 const catalog = computed(() => props.services.filter((service) => !service.supplemental))
-const categories = computed(() => [...new Map(catalog.value.map((service) => [service.categoryId, { id: service.categoryId, title: service.categoryTitle }])).values()])
+const isEnglish = computed(() => props.locale === 'en')
+const categories = computed(() => [...new Map(catalog.value.map((service) => [service.categoryId, { id: service.categoryId, title: service.categoryTitle, label: localizeDigits(isEnglish.value ? serviceGroupsEn[service.categoryId]?.title || service.categoryTitle : service.categoryTitle, props.locale) }])).values()])
 const groups = computed(() => categories.value.map((group) => ({
   ...group,
   services: catalog.value.filter((service) => {
     if (service.categoryId !== group.id || (category.value !== 'all' && category.value !== group.id)) return false
     const labels = props.chapters.filter((chapter) => service.chapterIds.includes(chapter.id)).map((chapter) => chapter.label).join(' ')
-    return normalizeServiceText(`${service.name} ${service.categoryTitle} ${labels}`).includes(normalizeServiceText(query.value))
+    return normalizeServiceText(`${service.name} ${serviceNamesEn[service.name] || ''} ${service.categoryTitle} ${group.label} ${labels}`).includes(normalizeServiceText(query.value))
   }),
 })).filter((group) => group.services.length))
 const resultCount = computed(() => groups.value.reduce((sum, group) => sum + group.services.length, 0))
 function locations(service) {
-  if (service.projectWide) return 'کل پروژه'
-  return props.chapters.filter((chapter) => service.chapterIds.includes(chapter.id)).map((chapter) => chapter.shortLabel).join('، ')
+  if (service.projectWide) return localizeDigits(isEnglish.value ? 'Whole project' : 'کل پروژه', props.locale)
+  return localizeDigits(props.chapters.filter((chapter) => service.chapterIds.includes(chapter.id)).map((chapter) => chapter.shortLabel).join(isEnglish.value ? ', ' : '، '), props.locale)
 }
+function serviceLabel(service) { return localizeDigits(isEnglish.value ? serviceNamesEn[service.name] || service.name : service.name, props.locale) }
+function serviceLanguage(service) { return isEnglish.value && serviceNamesEn[service.name] ? 'en' : 'fa' }
 async function open() {
   selectionPending = false
   opener = document.activeElement
@@ -54,24 +59,24 @@ defineExpose({ open })
 </script>
 
 <template>
-  <dialog ref="dialog" class="building-service-dialog" aria-labelledby="building-finder-title" @close="closed" @keydown.esc.stop.prevent="dialog.close()" @click="($event) => { if ($event.target === dialog) dialog.close() }">
+  <dialog ref="dialog" class="building-service-dialog" :lang="isEnglish ? 'en' : 'fa'" :dir="isEnglish ? 'ltr' : 'rtl'" aria-labelledby="building-finder-title" @close="closed" @keydown.esc.stop.prevent="dialog.close()" @click="($event) => { if ($event.target === dialog) dialog.close() }">
     <header class="building-finder-heading">
-      <div><h2 id="building-finder-title">خدمت شما، کجای ساختمان است؟</h2><p>{{ catalog.length.toLocaleString('fa-IR') }} خدمت؛ یک مسیر از طراحی تا ساخت و همراهی پروژه.</p></div>
-      <button type="button" class="building-finder-close" aria-label="بستن فهرست خدمات" @click="dialog.close()">×</button>
+      <div><h2 id="building-finder-title">{{ isEnglish ? 'Where does your service fit in the building?' : 'خدمت شما، کجای ساختمان است؟' }}</h2><p>{{ formatNumber(catalog.length, locale) }} {{ isEnglish ? 'services, from design through construction and project support.' : 'خدمت؛ یک مسیر از طراحی تا ساخت و همراهی پروژه.' }}</p></div>
+      <button type="button" class="building-finder-close" :aria-label="isEnglish ? 'Close the service list' : 'بستن فهرست خدمات'" @click="dialog.close()">×</button>
     </header>
     <div class="building-finder-filters">
-      <label><span>جست‌وجوی خدمت</span><input ref="searchInput" v-model="query" type="search" placeholder="مثلاً آزمایش خاک، نظارت، آسانسور…" autocomplete="off"></label>
-      <label><span>گروه خدمات</span><select v-model="category"><option value="all">همهٔ گروه‌ها</option><option v-for="group in categories" :key="group.id" :value="group.id">{{ group.title }}</option></select></label>
+      <label><span>{{ isEnglish ? 'Search services' : 'جست‌وجوی خدمت' }}</span><input ref="searchInput" v-model="query" type="search" :placeholder="isEnglish ? 'For example: soil testing, supervision, lifts…' : 'مثلاً آزمایش خاک، نظارت، آسانسور…'" autocomplete="off"></label>
+      <label><span>{{ isEnglish ? 'Service group' : 'گروه خدمات' }}</span><select v-model="category"><option value="all">{{ isEnglish ? 'All groups' : 'همهٔ گروه‌ها' }}</option><option v-for="group in categories" :key="group.id" :value="group.id">{{ group.label }}</option></select></label>
     </div>
-    <p class="building-finder-count" role="status">{{ resultCount.toLocaleString('fa-IR') }} خدمت پیدا شد. برای دیدن ارتباط با مدل، خدمت را انتخاب کنید.</p>
+    <p class="building-finder-count" role="status">{{ formatNumber(resultCount, locale) }} {{ isEnglish ? 'services found. Select one to see it on the model.' : 'خدمت پیدا شد. برای دیدن ارتباط با مدل، خدمت را انتخاب کنید.' }}</p>
     <div class="building-finder-results">
       <section v-for="group in groups" :key="group.id" :aria-labelledby="`building-finder-${group.id}`">
-        <h3 :id="`building-finder-${group.id}`">{{ group.title }}</h3>
-        <ul><li v-for="service in group.services" :key="service.name"><button type="button" :aria-label="`نمایش ${service.name} روی ساختمان`" @click="select(service)"><span>{{ service.name }}<small>{{ locations(service) }}</small></span><span aria-hidden="true">↗</span></button></li></ul>
+        <h3 :id="`building-finder-${group.id}`">{{ group.label }}</h3>
+        <ul><li v-for="service in group.services" :key="service.name"><button type="button" :aria-label="isEnglish ? `Show ${serviceLabel(service)} on the building` : `نمایش ${serviceLabel(service)} روی ساختمان`" @click="select(service)"><span :lang="serviceLanguage(service)" dir="auto">{{ serviceLabel(service) }}<small>{{ locations(service) }}</small></span><span aria-hidden="true">↗</span></button></li></ul>
       </section>
-      <div v-if="!resultCount" class="building-finder-empty"><p>خدمتی با این عبارت و گروه پیدا نشد.</p><button type="button" @click="query = ''; category = 'all'">نمایش همهٔ خدمات</button></div>
+      <div v-if="!resultCount" class="building-finder-empty"><p>{{ isEnglish ? 'No services match this search and group.' : 'خدمتی با این عبارت و گروه پیدا نشد.' }}</p><button type="button" @click="query = ''; category = 'all'">{{ isEnglish ? 'Show all services' : 'نمایش همهٔ خدمات' }}</button></div>
     </div>
-    <footer>خدمات نظارت، مدیریت و همکاری کلان به کل پروژه مربوط‌اند؛ دامنهٔ همکاری برای هر پروژه تعیین می‌شود.</footer>
+    <footer>{{ isEnglish ? 'Supervision, management and whole-project services can span multiple stages. The scope is defined for each project.' : 'خدمات نظارت، مدیریت و همکاری کلان به کل پروژه مربوط‌اند؛ دامنهٔ همکاری برای هر پروژه تعیین می‌شود.' }}</footer>
   </dialog>
 </template>
 

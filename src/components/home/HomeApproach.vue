@@ -1,14 +1,15 @@
 <script setup>
 import Eyebrow from '../common/Eyebrow.vue'
+defineProps({ locale: { type: String, default: 'fa' } })
 </script>
 
 <template>
   <section class="home-approach page-container" aria-labelledby="home-approach-title">
     <div class="approach-visual">
-      <div class="approach-visual-head"><span>نمای مفهومی و بدون مقیاس</span><b dir="ltr">01—04</b></div>
+      <div class="approach-visual-head"><span>{{ locale === 'en' ? 'Conceptual illustration, not to scale' : 'نمای مفهومی و بدون مقیاس' }}</span><b dir="ltr">01—04</b></div>
       <svg class="approach-diagram" viewBox="0 0 600 360" role="img" aria-labelledby="approach-diagram-title approach-diagram-desc">
-        <title id="approach-diagram-title">نمای مفهومی هماهنگی چهار رشتهٔ ساختمان</title>
-        <desc id="approach-diagram-desc">نمودار شماتیک و بدون مقیاس از دیوارها، سازه و مسیرهای تأسیسات؛ این تصویر نقشهٔ اجرایی پروژه نیست.</desc>
+        <title id="approach-diagram-title">{{ locale === 'en' ? 'Conceptual coordination of four building disciplines' : 'نمای مفهومی هماهنگی چهار رشتهٔ ساختمان' }}</title>
+        <desc id="approach-diagram-desc">{{ locale === 'en' ? 'A schematic diagram of walls, structure and building services, not a construction drawing.' : 'نمودار شماتیک و بدون مقیاس از دیوارها، سازه و مسیرهای تأسیسات؛ این تصویر نقشهٔ اجرایی پروژه نیست.' }}</desc>
         <defs>
           <pattern id="approach-grid" width="30" height="30" patternUnits="userSpaceOnUse">
             <path d="M30 0H0V30" fill="none" stroke="#d9e2da" stroke-width=".7" />
@@ -33,14 +34,14 @@ import Eyebrow from '../common/Eyebrow.vue'
           <text x="339" y="316">MECHANICAL</text><text x="458" y="316">ELECTRICAL</text>
         </g>
       </svg>
-      <div class="approach-visual-key"><span><i></i>معماری و سازه</span><span><i></i>مکانیک</span><span><i></i>برق</span></div>
+      <div class="approach-visual-key"><span><i></i>{{ locale === 'en' ? 'Architecture & structure' : 'معماری و سازه' }}</span><span><i></i>{{ locale === 'en' ? 'Mechanical' : 'مکانیک' }}</span><span><i></i>{{ locale === 'en' ? 'Electrical' : 'برق' }}</span></div>
       <div class="approach-visual-foot"><span>SCHEMATIC STUDY</span><span>ARCPOL / DESIGN</span></div>
     </div>
     <div class="approach-copy">
-      <Eyebrow>رویکرد ما <span class="en-label" dir="ltr">/ APPROACH</span></Eyebrow>
-      <h2 id="home-approach-title">از نقشه،<br><em>تا کارگاه.</em></h2>
-      <p>مدارک فنی و تصویرهای واقعی کارگاهی کنار هم قرار می‌گیرند تا دامنهٔ خدمات مهندسی روشن باشد.</p>
-      <a class="text-link" href="#/services">مرور خدمات مهندسی <span aria-hidden="true">←</span></a>
+      <Eyebrow>{{ locale === 'en' ? 'OUR APPROACH' : 'رویکرد ما / APPROACH' }}</Eyebrow>
+      <h2 id="home-approach-title"><template v-if="locale === 'en'">From drawings<br><em>to the site.</em></template><template v-else>از نقشه،<br><em>تا کارگاه.</em></template></h2>
+      <p>{{ locale === 'en' ? 'Technical documents and real site images are presented together to make the engineering scope clear.' : 'مدارک فنی و تصویرهای واقعی کارگاهی کنار هم قرار می‌گیرند تا دامنهٔ خدمات مهندسی روشن باشد.' }}</p>
+      <a class="text-link" href="/services">{{ locale === 'en' ? 'Explore engineering services' : 'مرور خدمات مهندسی' }} <span aria-hidden="true">{{ locale === 'en' ? '→' : '←' }}</span></a>
     </div>
   </section>
 </template>

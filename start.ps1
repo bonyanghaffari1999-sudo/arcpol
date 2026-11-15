@@ -1,11 +1,12 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$siteUrl = 'http://127.0.0.1:5174/'
+$siteUrl = 'http://arcpol.localhost:8000/'
+$siteProbeUrl = 'http://127.0.0.1:8000/'
 $viteEntry = Join-Path $projectRoot 'node_modules\vite\bin\vite.js'
 
 function Get-RunningArcpolSite {
   try {
-    $response = Invoke-WebRequest -Uri $siteUrl -UseBasicParsing -TimeoutSec 2
+    $response = Invoke-WebRequest -Uri $siteProbeUrl -UseBasicParsing -TimeoutSec 2
     if ($response.StatusCode -eq 200 -and $response.Content -match '(?i)<html[^>]+dir="rtl"') {
       return $true
     }
@@ -18,9 +19,9 @@ if (Get-RunningArcpolSite) {
   return
 }
 
-$portOwner = Get-NetTCPConnection -State Listen -LocalPort 5174 -ErrorAction SilentlyContinue | Select-Object -First 1
+$portOwner = Get-NetTCPConnection -State Listen -LocalPort 8000 -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($portOwner) {
-  throw "پورت ۵۱۷۴ دست برنامهٔ دیگری است (PID $($portOwner.OwningProcess)). آن برنامه را ببندید و دوباره start.ps1 را اجرا کنید."
+  throw "پورت ۸۰۰۰ دست برنامهٔ دیگری است (PID $($portOwner.OwningProcess)). آن برنامه را ببندید و دوباره start.ps1 را اجرا کنید."
 }
 
 $bundledNode = Join-Path $projectRoot '.tools\node\node.exe'
@@ -49,7 +50,7 @@ if (-not (Test-Path -LiteralPath $viteEntry)) {
 $stdoutPath = Join-Path $projectRoot '.local-server.log'
 $stderrPath = Join-Path $projectRoot '.local-server-error.log'
 $serverProcess = Start-Process -FilePath $nodePath `
-  -ArgumentList @($viteEntry, '--host', '127.0.0.1', '--port', '5174', '--strictPort') `
+  -ArgumentList @($viteEntry, '--host', '127.0.0.1', '--port', '8000', '--strictPort') `
   -WorkingDirectory $projectRoot -WindowStyle Hidden -PassThru `
   -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
 

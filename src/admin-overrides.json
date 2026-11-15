@@ -3,7 +3,75 @@
   "projects": {
     "patches": {},
     "deleted": [],
-    "added": []
+    "added": [
+      {
+        "id": 1000001,
+        "code": "LIVE-47780",
+        "status": "in-progress",
+        "type": "نظارت",
+        "address": "هشتگرد",
+        "usage": "مسکونی",
+        "description": "ساختمان مسکونی در هشتگرد؛ مستندسازی روند اجرا و نظارت کارگاهی.",
+        "tags": [
+          "هشتگرد",
+          "مسکونی",
+          "نظارت اجرایی"
+        ],
+        "services": [
+          "نظارت"
+        ],
+        "source": "field-reports",
+        "timeline": [
+          {
+            "date": "2026-10-25T07:25:26.000Z",
+            "title": "بازدید اجرایی سقف طبقه سوم",
+            "summary": "مرحله اجرای سقف طبقه سوم در بازدید کارگاهی به‌صورت تصویری مستند شد.",
+            "status": "logged",
+            "image": "/telegram/live-export-47776-photo_42441@25-10-2026_10-55-26.jpg",
+            "liveRecordKey": "1991d141e9766592f3f61739590a7f213ffbc21d350e4658b3b9e53307255b46"
+          }
+        ],
+        "images": [
+          "/telegram/live-export-47776-photo_42441@25-10-2026_10-55-26.jpg"
+        ],
+        "finalImage": null,
+        "updatedAt": "2026-10-25T07:25:26.000Z"
+      },
+      {
+        "id": 1000002,
+        "code": "LIVE-47932",
+        "status": "in-progress",
+        "type": "نظارت",
+        "address": "مشکین‌دشت",
+        "usage": "مسکونی",
+        "description": "پروژه مسکونی در مشکین‌دشت؛ ثبت وضعیت نمای ساختمان در بازدید کارگاهی.",
+        "tags": [
+          "مشکین‌دشت",
+          "مسکونی",
+          "نمای سنگی",
+          "نظارت کارگاهی"
+        ],
+        "services": [
+          "نظارت"
+        ],
+        "source": "field-reports",
+        "timeline": [
+          {
+            "date": "2026-10-31T06:41:09.000Z",
+            "title": "ثبت نمای ساختمان در بازدید کارگاهی",
+            "summary": "نمای سنگی ساختمان و بنای مجاور در تصویر بازدید مستند شد.",
+            "status": "logged",
+            "image": "/telegram/live-export-47932-photo_42511@31-10-2026_10-11-09.jpg",
+            "liveRecordKey": "fae94f5512a090520fa97ce665786e4624c6b15cd5ebaa78761c50a8f9d5eb72"
+          }
+        ],
+        "images": [
+          "/telegram/live-export-47932-photo_42511@31-10-2026_10-11-09.jpg"
+        ],
+        "finalImage": null,
+        "updatedAt": "2026-10-31T06:41:09.000Z"
+      }
+    ]
   },
   "articles": {
     "patches": {},

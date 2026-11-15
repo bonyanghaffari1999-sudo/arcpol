@@ -1,0 +1,83 @@
+// English version of the conceptual building journey; all source service names
+// remain Persian route keys and are displayed through the verified catalogue.
+export const buildingChapterEn = {
+  foundation: {
+    label: 'Ground and foundation', shortLabel: 'Foundation',
+    title: 'A base for everything that follows.',
+    description: 'Foundations and grade beams take shape at ground level—the first connection between the site and the future structure.',
+    note: 'The required studies and construction work depend on site conditions and the agreed project scope.',
+    elements: ['Isolated footings and connecting grade beams', 'Starter bars and column bases', 'Ground-floor level'],
+  },
+  structure: {
+    label: 'Structural frame', shortLabel: 'Frame',
+    title: 'The building rises.',
+    description: 'Columns and beams rise floor by floor. The five-storey building volume and its central core now take shape.',
+    note: 'This is a schematic model; each project’s structural system is defined by its own engineering documents.',
+    elements: ['Five-storey frames, columns and beams', 'Column-to-foundation connections', 'Central building core'],
+  },
+  slabs: {
+    label: 'Floor slabs', shortLabel: 'Slabs',
+    title: 'Each floor creates new space.',
+    description: 'Floor slabs are placed at each level, while the stair connects the floors.',
+    note: 'The drawn details are schematic. The floor system for a real project must be verified against its documents.',
+    elements: ['Floor slabs and balcony edges', 'Stairs and handrails', 'Floor and ceiling assemblies'],
+  },
+  mechanical: {
+    label: 'Mechanical services', shortLabel: 'Mechanical',
+    title: 'Water and air find their routes.',
+    description: 'Pipes, risers and air ducts are added to the frame. Part of the slabs is opened to reveal the service routes.',
+    note: 'The routes shown are illustrative. Actual routing and sizing are set in the project drawings.',
+    elements: ['Pipe risers and branches', 'Air distribution ducts', 'Ventilation outlets on each floor'],
+  },
+  electrical: {
+    label: 'Electrical services', shortLabel: 'Electrical',
+    title: 'Light reaches the building.',
+    description: 'Electrical routes extend through the floors, with panels and lights in place. The cutaway reveals how the elements connect.',
+    note: 'Electrical drawings and equipment locations for each building must be coordinated with its architecture and structure.',
+    elements: ['Cable risers and distribution routes', 'Floor electrical panels', 'Lighting and branch circuits'],
+  },
+  architecture: {
+    label: 'Architecture and facade', shortLabel: 'Facade',
+    title: 'The building takes on its appearance.',
+    description: 'Walls, glazing, window frames and balconies complete the building volume. Use the cutaway control to view the interior elements again.',
+    note: 'This facade is conceptual and does not represent the design or appearance of a specific company project.',
+    elements: ['Four elevations and framed windows', 'Balconies, railings and entrance canopy', 'Interior partitions and facade elements'],
+  },
+  roof: {
+    label: 'Roof and energy', shortLabel: 'Roof',
+    title: 'The final level above the city.',
+    description: 'Parapets, roof access, ventilation equipment and solar panels are placed on the top level.',
+    note: 'Solar panels are included as a conceptual model element; they do not claim installation on a specific project.',
+    elements: ['Parapet and roof-access room', 'Ventilation equipment and fans', 'Conceptual solar panels'],
+  },
+  delivery: {
+    label: 'Project-wide coordination', shortLabel: 'Coordination',
+    title: 'From planning to project support.',
+    description: 'Services that span several building systems or relate to coordination, supervision, management and whole-project support.',
+    note: 'The scope and sequence of collaboration are defined for each project and the agreed requirements.',
+    elements: ['Entrance steps and site paving', 'Trees, benches and site lighting', 'Coordination of architecture, structure and services'],
+  },
+}
+
+export const buildingUiEn = {
+  eyebrow: 'Interactive building', title: 'From the ground up.',
+  intro: 'Scroll down to assemble the building, or choose from {count} services to see where each connects to the model.',
+  complete: 'View the complete building', serviceLauncher: 'Services on the building',
+  modelComplete: 'Model assembled', modelProgress: 'Concept model progress',
+  progressLabel: 'Concept model assembly progress', directStage: 'Jump to a construction stage',
+  startTitle: 'It all starts\nwith the ground.',
+  startDescription: 'Only the site is visible so far. Scroll down to place the foundation and see the building take shape stage by stage.',
+  facts: ['5 storeys', '8 stages', '360° view'], start: 'Start the sequence',
+  simplified: 'A simplified construction sequence to explore building systems',
+  selectedRelation: 'How this service relates to the building',
+  projectWide: 'This service may span several stages of a project; it is not limited to the site works or final stage.',
+  selectedPart: 'Related elements are highlighted in the model. Select a stage to view it.',
+  wholeProjectDocs: 'Project-wide services and documents', serviceSection: 'Services for this building system',
+  projectNote: 'Supervision, management, consultancy and broader collaboration can span the full project journey.',
+  components: 'Elements shown at this stage', fieldEvidence: 'Related field-report photographs',
+  fromReports: 'From field reports', next: 'Next stage: ',
+  contact: 'Discuss your project', restart: 'Restart the sequence',
+  liveStatus: 'Stage {number}: {label}', startStatus: 'At the beginning; the site is ready for construction',
+  outro: 'A building brought together through coordinated disciplines.', allServices: 'Explore all ARCPOL services',
+  clearSelection: 'Clear selected service', clear: 'Clear', details: 'Service details',
+}

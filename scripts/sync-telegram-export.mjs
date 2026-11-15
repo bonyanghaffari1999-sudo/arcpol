@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { syncDocumentsToMariaDb } from './sync-mariadb-documents.mjs'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const exportDirectory = process.env.TELEGRAM_EXPORT_DIR || path.resolve(projectRoot, '..', 'Telegram Desktop', 'ChatExport_2026-10-24')
@@ -347,6 +348,7 @@ async function bestPhoto(photoPaths) {
 async function persistPhotos(projects) {
   await fs.mkdir(publicDirectory, { recursive: true })
   const keep = new Set()
+  const removedPaths = []
   for (const project of projects) {
     for (const event of project.timeline) {
       const selected = await bestPhoto(event.photoSources)
@@ -368,9 +370,13 @@ async function persistPhotos(projects) {
   }
   for (const name of await fs.readdir(publicDirectory)) {
     if (/^photo_\d+@[^/\\]+\.(?:jpe?g|png|webp)$/i.test(name) && !keep.has(name)) {
-      await fs.unlink(path.join(publicDirectory, name)).catch(() => {})
+      try {
+        await fs.unlink(path.join(publicDirectory, name))
+        removedPaths.push(`/telegram/${name}`)
+      } catch {}
     }
   }
+  return removedPaths
 }
 
 async function main() {
@@ -468,7 +474,7 @@ async function main() {
   const standalone = independentReports.map((report, index) => makeRecord(report, index, true))
   const allRecords = [...linkedProjects, ...standalone]
 
-  await persistPhotos(allRecords)
+  const removedPhotoPaths = await persistPhotos(allRecords)
   const publicRecord = (project) => {
     const timeline = project.timeline
       .filter((event) => event.image)
@@ -498,7 +504,7 @@ async function main() {
   const photoCount = new Set(publicRecords.flatMap((record) => record.images)).size
   const linkedOutput = `${JSON.stringify(publicLinkedProjects, null, 2)}\n`
   const standaloneOutput = `${JSON.stringify(publicStandalone, null, 2)}\n`
-  const syncStateOutput = `${JSON.stringify({
+  const syncState = {
     sourceEventCount: eventCount,
     sourceLinkedRecords: linkedProjects.length,
     sourceIndependentRecords: standalone.length,
@@ -506,7 +512,8 @@ async function main() {
     publishedIndependentReports: publicStandalone.length,
     publishedEventCount: publicEventCount,
     publishedPhotoCount: photoCount,
-  }, null, 2)}\n`
+  }
+  const syncStateOutput = `${JSON.stringify(syncState, null, 2)}\n`
   const writeIfChanged = async (file, value) => {
     let prior = ''
     try { prior = await fs.readFile(file, 'utf8') } catch { /* First import. */ }
@@ -526,6 +533,22 @@ async function main() {
     writeIfChanged(reportsFile, standaloneOutput),
     writeIfChanged(syncStateFile, syncStateOutput),
   ])
+  const mediaAssets = []
+  for (const imagePath of new Set(publicRecords.flatMap((record) => record.images))) {
+    if (!imagePath.startsWith('/telegram/')) continue
+    const name = path.basename(imagePath)
+    const target = path.join(projectRoot, 'public', imagePath.slice(1))
+    const stat = await fs.stat(target).catch(() => null)
+    if (!stat?.isFile()) continue
+    const extension = path.extname(name).toLowerCase()
+    const type = extension === '.png' ? 'image/png' : extension === '.webp' ? 'image/webp' : 'image/jpeg'
+    mediaAssets.push({ path: imagePath, name, type, bytes: stat.size, category: 'reports', private: false, storagePath: `public${imagePath}` })
+  }
+  await syncDocumentsToMariaDb(projectRoot, {
+    'telegram-projects': publicLinkedProjects,
+    'telegram-reports': publicStandalone,
+    'telegram-sync-meta': syncState,
+  }, { mediaAssets, deleteMediaPaths: removedPhotoPaths })
   if (!process.argv.includes('--quiet')) {
     console.log(`Synchronized ${messages.length} complete Telegram messages: ${publicLinkedProjects.length} illustrated identifier-linked projects, ${publicStandalone.length} illustrated independent reports, ${publicEventCount} illustrated report events and ${photoCount} selected photos. Source totals: ${linkedProjects.length} linked groups, ${standalone.length} independent reports and ${eventCount} events.`)
   }

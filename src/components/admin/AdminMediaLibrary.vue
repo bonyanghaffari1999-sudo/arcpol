@@ -258,7 +258,7 @@ onMounted(loadMedia)
         <label v-for="index in 3" :key="index" class="media-field">پروژهٔ منتخب {{ index }}
           <select :value="(media.featuredProjectIds || [68, 70, 50])[index - 1] || ''" @change="updateFeatured(index - 1, $event.target.value)">
             <option value="">بدون انتخاب</option>
-            <option v-for="project in projectOptions" :key="project.id" :value="project.id">{{ project.code || `G-${project.id}` }} · {{ project.usage || 'پروژه' }}</option>
+            <option v-for="project in projectOptions" :key="project.id" :value="project.id">{{ project.code || `رکورد داخلی ${project.id}` }} · {{ project.usage || 'پروژه' }}</option>
           </select>
         </label>
       </div>

@@ -1,5 +1,6 @@
 import { serviceAssignments } from './building-content.js'
 import { constructionOrder } from './building-timeline.js'
+import { serviceSlug } from '../../service-routes.js'
 
 export function normalizeServiceText(value) {
   return String(value ?? '').normalize('NFKC').toLocaleLowerCase('fa-IR')
@@ -49,6 +50,6 @@ export function buildServiceCatalog(groups, additionalServices) {
 
 export function serviceDetailHref(service) {
   return service.supplemental
-    ? `#/services?category=${encodeURIComponent(service.categoryId)}`
-    : `#/services?service=${encodeURIComponent(service.name)}`
+    ? `/services?category=${encodeURIComponent(service.categoryId)}`
+    : `/services/${serviceSlug(service.name)}`
 }

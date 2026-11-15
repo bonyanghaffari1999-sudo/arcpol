@@ -66,7 +66,22 @@ function watchTelegramExport() {
 
 export default defineConfig({
   plugins: [vue(), localAdminApi(projectRoot), watchTelegramExport()],
-  server: { host: '127.0.0.1', port: 5174, strictPort: true },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.replaceAll('\\', '/').includes('/node_modules/three/')) return 'three-engine'
+        },
+      },
+    },
+  },
+  server: {
+    host: '127.0.0.1',
+    port: 8000,
+    strictPort: true,
+    allowedHosts: ['arcpol', 'arcpol.localhost'],
+    watch: { ignored: ['**/.local-data/**', '**/.codex-review-build/**', '**/tmp/**'] },
+  },
   preview: {
     host: '127.0.0.1',
     allowedHosts: ['notify-slideshow-confident-colleagues.trycloudflare.com'],

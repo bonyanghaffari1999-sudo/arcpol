@@ -1,31 +1,33 @@
 <script setup>
 import Eyebrow from '../common/Eyebrow.vue'
 import ButtonLink from '../common/ButtonLink.vue'
+import { localizeDigits } from '../../i18n/numbers.js'
 
 defineProps({
   company: { type: Object, required: true },
   image: { type: String, default: '/images/hero-building.jpg' },
   imageAlt: { type: String, default: 'تصویر مفهومی معماری و ساخت؛ نمونهٔ پروژهٔ شرکت نیست.' },
   imageCaption: { type: String, default: 'تصویر مفهومی' },
+  locale: { type: String, default: 'fa' },
 })
 </script>
 
 <template>
   <section class="hero page-container" aria-labelledby="home-hero-title">
     <div class="hero-copy">
-      <Eyebrow line>مهندسی و ساخت ساختمان <span class="en-label" dir="ltr">/ ARCPOL</span></Eyebrow>
-      <h1 id="home-hero-title">از زمین،<br><em>تا تحویل.</em></h1>
-      <p class="hero-lede">{{ company.positioning }}</p>
+      <Eyebrow line>{{ locale === 'en' ? 'ENGINEERING & CONSTRUCTION / ARCPOL' : 'مهندسی و ساخت ساختمان / ARCPOL' }}</Eyebrow>
+      <h1 id="home-hero-title"><template v-if="locale === 'en'">From the ground<br><em>to delivery.</em></template><template v-else>از زمین،<br><em>تا تحویل.</em></template></h1>
+      <p class="hero-lede" :lang="locale === 'en' && company.positioning !== 'از نقشه و آزمایش تا نظارت و اجرا؛ متناسب با نیاز پروژه.' ? 'fa' : undefined" dir="auto">{{ localizeDigits(locale === 'en' && company.positioning === 'از نقشه و آزمایش تا نظارت و اجرا؛ متناسب با نیاز پروژه.' ? 'From drawings and testing to supervision and construction, tailored to your project.' : company.positioning, locale) }}</p>
       <div class="hero-actions">
-        <ButtonLink href="#/contact" icon="↗">درخواست مشاوره</ButtonLink>
-        <a class="text-link" href="#/services">پیدا کردن خدمت <span aria-hidden="true">←</span></a>
+        <ButtonLink href="/contact" icon="↗">{{ locale === 'en' ? 'Request a consultation' : 'درخواست مشاوره' }}</ButtonLink>
+        <a class="text-link" href="/services">{{ locale === 'en' ? 'Find a service' : 'پیدا کردن خدمت' }} <span aria-hidden="true">{{ locale === 'en' ? '→' : '←' }}</span></a>
       </div>
-      <div class="hero-proof"><span class="proof-dot"></span><span>یک خدمت مشخص یا چند مرحلهٔ هماهنگ.</span></div>
+      <div class="hero-proof"><span class="proof-dot"></span><span>{{ locale === 'en' ? 'One service or several coordinated stages.' : 'یک خدمت مشخص یا چند مرحلهٔ هماهنگ.' }}</span></div>
     </div>
     <div class="hero-visual">
       <div class="hero-grid-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
       <figure class="hero-photo">
-        <img :src="image || '/images/hero-building.jpg'" :alt="imageAlt" fetchpriority="high" @error="$event.currentTarget.hidden = true">
+        <img :src="image || '/images/hero-building.jpg'" :alt="localizeDigits(locale === 'en' && imageAlt === 'عکس واقعی از نمای بیرونی یکی از پروژه‌های ثبت‌شدهٔ شرکت.' ? 'Exterior photograph of a project recorded by the company.' : imageAlt, locale)" :lang="locale === 'en' && imageAlt === 'عکس واقعی از نمای بیرونی یکی از پروژه‌های ثبت‌شدهٔ شرکت.' ? 'en' : 'fa'" fetchpriority="high" @error="$event.currentTarget.hidden = true">
         <div class="hero-crane" aria-hidden="true">
           <svg viewBox="0 0 100 90" fill="none">
             <path class="hero-crane-mast" d="M44 21v49m-9 1h18m-14-1 5-49 5 49m-8-16h9m-8-16h7" />
@@ -38,9 +40,9 @@ defineProps({
             </g>
           </svg>
         </div>
-        <figcaption><span>{{ imageCaption }}</span><strong dir="ltr">ENGINEERING &amp; CONSTRUCTION</strong></figcaption>
+        <figcaption><span :lang="locale === 'en' && imageCaption === 'یک نمونه از پروژه‌های شرکت' ? 'en' : 'fa'" dir="auto">{{ localizeDigits(locale === 'en' && imageCaption === 'یک نمونه از پروژه‌های شرکت' ? 'A project from the company archive' : imageCaption, locale) }}</span><strong dir="ltr">ENGINEERING &amp; CONSTRUCTION</strong></figcaption>
       </figure>
-      <div class="hero-stamp"><span>از زمین</span><b>تا</b><span>تحویل</span></div>
+      <div class="hero-stamp"><span>{{ locale === 'en' ? 'FROM' : 'از زمین' }}</span><b>{{ locale === 'en' ? '→' : 'تا' }}</b><span>{{ locale === 'en' ? 'DELIVERY' : 'تحویل' }}</span></div>
       <div class="hero-index"><span>ENGINEERING</span><b>ARCPOL</b></div>
     </div>
   </section>

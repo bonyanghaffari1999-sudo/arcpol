@@ -1,9 +1,6 @@
-export function toLatinDigits(value) {
-  return String(value ?? '').replace(/[۰-۹٠-٩]/g, (digit) => {
-    const code = digit.charCodeAt(0)
-    return String(code >= 0x06f0 ? code - 0x06f0 : code - 0x0660)
-  })
-}
+import { localizeDigits, toLatinDigits } from './i18n/numbers.js'
+
+export { toLatinDigits }
 
 function iranianE164(value) {
   const digits = toLatinDigits(value).replace(/\D/g, '')
@@ -19,12 +16,13 @@ export function telephoneHref(value) {
   return number ? `tel:${number}` : ''
 }
 
-export function whatsappHref(value) {
+export function whatsappHref(value, message = '') {
   const number = iranianE164(value).replace(/\D/g, '')
-  return number ? `https://wa.me/${number}` : ''
+  const text = String(message ?? '').trim()
+  return number ? `https://wa.me/${number}${text ? `?text=${encodeURIComponent(text)}` : ''}` : ''
 }
 
-export function formatIranianPhone(value) {
+export function formatIranianPhone(value, locale = 'fa') {
   const digits = toLatinDigits(value).replace(/\D/g, '')
   let formatted = digits
   if (digits.length === 11 && digits.startsWith('09')) {
@@ -32,5 +30,5 @@ export function formatIranianPhone(value) {
   } else if (digits.length === 11 && digits.startsWith('0')) {
     formatted = `${digits.slice(0, 3)} ${digits.slice(3, 7)} ${digits.slice(7)}`
   }
-  return formatted.replace(/\d/g, (digit) => '۰۱۲۳۴۵۶۷۸۹'[Number(digit)])
+  return localizeDigits(formatted, locale)
 }

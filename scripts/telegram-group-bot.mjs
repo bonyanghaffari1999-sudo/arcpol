@@ -1,13 +1,17 @@
 import fs from 'node:fs/promises'
+import { createHash, timingSafeEqual } from 'node:crypto'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { withTelegramInboxLock } from './telegram-inbox-lock.mjs'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const privateDirectory = path.join(projectRoot, '.local-data')
 const stateFile = path.join(privateDirectory, 'telegram-bot-state.json')
 const inboxFile = path.join(privateDirectory, 'telegram-live-inbox.json')
 const healthFile = path.join(privateDirectory, 'telegram-health.json')
+const ownerFile = path.join(privateDirectory, 'telegram-owner.json')
+const ownerPairingFile = path.join(privateDirectory, 'telegram-owner-pairing.json')
 const attachmentDirectory = path.join(privateDirectory, 'attachments')
 const localEnvFile = path.join(projectRoot, '.env.telegram.local')
 const apiTransportFile = path.join(projectRoot, 'scripts', 'telegram-api.ps1')
@@ -189,7 +193,8 @@ function hasMedia(message) {
 async function storePhoto(message, photo) {
   if (!photo?.file_id) return null
   const extension = '.jpg'
-  const filename = `${message.chat.id}-${message.message_id}${extension}`
+  const photoKey = String(photo.file_unique_id ?? photo.file_id).replace(/[^A-Za-z0-9_-]/gu, '')
+  const filename = `${message.chat.id}-${message.message_id}-${photoKey}${extension}`
   const destination = path.join(attachmentDirectory, filename)
   try {
     await fs.access(destination)
@@ -239,7 +244,10 @@ async function processCategorySelection(query) {
   const userId = query.from?.id
   const categoryId = query.data?.match(/^category:([a-z]+)$/u)?.[1]
   const category = submissionCategories.find((item) => item.id === categoryId)
-  if (!chat || String(chat.id) !== groupId || !userId || !category) {
+  const inAuthorizedGroup = ['group', 'supergroup'].includes(chat?.type) && String(chat.id) === groupId
+  const owner = chat?.type === 'private' ? await readJson(ownerFile, null) : null
+  const isPairedOwner = chat?.type === 'private' && String(owner?.userId || '') === String(userId || '')
+  if (!chat || (!inAuthorizedGroup && !isPairedOwner) || !userId || !category) {
     await telegram('answerCallbackQuery', { callback_query_id: query.id, text: 'این انتخاب برای این گروه معتبر نیست.' })
     return
   }
@@ -287,13 +295,74 @@ async function discoverGroup() {
 }
 
 async function processMessage(message, updateId, inbox) {
-  if (!message?.chat || !['group', 'supergroup'].includes(message.chat.type)) return false
-  if (String(message.chat.id) !== groupId) return false
+  if (!message?.chat) return false
+  const isPrivate = message.chat.type === 'private'
+  const isAuthorizedGroup = ['group', 'supergroup'].includes(message.chat.type) && String(message.chat.id) === groupId
+  if (!isPrivate && !isAuthorizedGroup) return false
   if (message.from?.is_bot) return false
   const text = cleanText(message)
   const command = commandFrom(text)
   const threadId = message.message_thread_id ?? 0
   const key = message.from?.id ? sessionKey(message.chat.id, message.from.id, threadId) : null
+  const owner = isPrivate ? await readJson(ownerFile, null) : null
+  const isPairedOwner = isPrivate && String(owner?.userId || '') === String(message.from?.id || '')
+  const replyToMessage = (reply) => telegram('sendMessage', {
+    chat_id: message.chat.id,
+    reply_parameters: { message_id: message.message_id, allow_sending_without_reply: true },
+    text: reply,
+  })
+
+  if (isPrivate && command === 'start') {
+    const payload = text.match(/^\/start(?:@[A-Za-z0-9_]+)?(?:\s+([A-Za-z0-9_-]{1,64}))?/iu)?.[1] || ''
+    if (isPairedOwner) {
+      await replyToMessage('سلام. بات گزارش‌های تلگرام آماده است. برای دستورها /help را بفرستید.')
+      return false
+    }
+    const pairing = payload ? await readJson(ownerPairingFile, null) : null
+    const providedHash = payload ? createHash('sha256').update(payload).digest() : Buffer.alloc(0)
+    const expectedHash = pairing?.codeHash ? Buffer.from(pairing.codeHash, 'hex') : Buffer.alloc(0)
+    const validPairing = Boolean(payload)
+      && !owner?.userId
+      && !pairing?.usedAt
+      && Date.parse(pairing?.expiresAt || '') > Date.now()
+      && expectedHash.length === providedHash.length
+      && timingSafeEqual(expectedHash, providedHash)
+    if (validPairing) {
+      await writeJsonAtomically(ownerFile, { userId: String(message.from.id), chatId: String(message.chat.id), pairedAt: new Date().toISOString() })
+      await writeJsonAtomically(ownerPairingFile, { ...pairing, codeHash: '', usedAt: new Date().toISOString() })
+      await replyToMessage('اتصال مدیر فعال شد. از اینجا می‌توانید وضعیت صندوق را ببینید و گزارش تازه بفرستید. /help')
+    } else {
+      await replyToMessage('این گفت‌وگو هنوز به مدیر سایت وصل نشده است. برای راهنمای دستورهای عمومی /help را بفرستید.')
+    }
+    return false
+  }
+
+  if (isPrivate && command === 'help') {
+    await replyToMessage('من گزارش‌های گروه پروژه را در سایت محلی جمع می‌کنم. مدیرِ وصل‌شده می‌تواند /new برای گزارش تازه، /status برای وضعیت دریافت و /pending برای تعداد گزارش‌های بررسی‌نشده بفرستد. گفت‌وگوی آزاد هوش مصنوعی در این بات فعال نیست.')
+    return false
+  }
+  if (isPrivate && !isPairedOwner) {
+    await replyToMessage('این بات برای گفت‌وگوی خصوصی فقط به مدیر سایت وصل می‌شود. گزارش‌های گروه همچنان در صندوق محلی ثبت می‌شوند.')
+    return false
+  }
+  if (isPrivate && (command === 'status' || command === 'pending')) {
+    const pending = inbox.filter((record) => !['published', 'dismissed'].includes(record.review))
+    if (command === 'status') {
+      const health = await readJson(healthFile, {})
+      const checkedAt = Date.parse(health.checkedAt || '')
+      const connected = health.status === 'connected' && Date.now() - checkedAt < 120000
+      const photos = pending.reduce((total, record) => total + (record.photoPaths?.length || (record.photoPath ? 1 : 0)), 0)
+      await replyToMessage(`وضعیت بات: ${connected ? 'متصل' : 'نیازمند بررسی'}\nگزارش‌های بررسی‌نشده: ${pending.length}\nعکس‌های خصوصی در صندوق: ${photos}`)
+    } else {
+      const preview = pending.slice(-3).reverse().map((record) => {
+        const summary = String(record.text || 'گزارش تصویری بدون متن').replace(/\s+/gu, ' ').slice(0, 110)
+        return `• ${record.project || record.category || 'گزارش تلگرام'} — ${summary}`
+      }).join('\n')
+      await replyToMessage(`گزارش‌های بررسی‌نشده: ${pending.length}${preview ? `\n\nتازه‌ترین موارد:\n${preview}` : ''}`)
+    }
+    return false
+  }
+
   if (command === 'new' || command === 'report') {
     await showCategoryMenu(message)
     return false
@@ -315,8 +384,12 @@ async function processMessage(message, updateId, inbox) {
     })
     return false
   }
-  if (/^\/[a-z_]+(?:@[A-Za-z0-9_]+)?(?:\s|$)/iu.test(text) && !command) return false
-  if (command || (!text && !hasMedia(message))) return false
+  if (/^\/[a-z_]+(?:@[A-Za-z0-9_]+)?(?:\s|$)/iu.test(text) && !command) {
+    if (isPrivate) await replyToMessage('این دستور را نمی‌شناسم. /help را بفرستید.')
+    return false
+  }
+  const isEdited = Boolean(message.edit_date)
+  if (command || (!text && !hasMedia(message) && !isEdited)) return false
 
   const pendingSession = key ? sessions.get(key) : null
   if (pendingSession && Date.now() - pendingSession.startedAt >= 60 * 60 * 1000) {
@@ -324,10 +397,14 @@ async function processMessage(message, updateId, inbox) {
   }
   const session = pendingSession
     && Date.now() - pendingSession.startedAt < 60 * 60 * 1000
-    && message.reply_to_message?.message_id === pendingSession.promptMessageId
+    && (isPrivate || message.reply_to_message?.message_id === pendingSession.promptMessageId)
     ? pendingSession
     : null
-  if (!session && !automaticCapture) return false
+  if (isPrivate && !session && (text || hasMedia(message))) {
+    await replyToMessage('برای ارسال گزارش تازه، اول /new را بفرستید. برای دستورهای بات /help را ببینید.')
+    return false
+  }
+  if (!session && (isPrivate || !automaticCapture)) return false
 
   const photo = newestPhoto(message)
   let localPhoto = null
@@ -336,16 +413,55 @@ async function processMessage(message, updateId, inbox) {
     catch (error) { throw new Error(`Photo for message ${message.message_id} could not be saved; update retained for retry: ${error.message}`) }
   }
 
-  const recordKey = message.media_group_id
+  const computedRecordKey = message.media_group_id
     ? `${message.chat.id}:album:${message.media_group_id}`
     : `${message.chat.id}:${message.message_id}`
-  const previousIndex = inbox.findIndex((item) => item.recordKey === recordKey)
+  let previousIndex = inbox.findIndex((item) => item.recordKey === computedRecordKey)
+  if (previousIndex < 0 && isEdited) {
+    previousIndex = inbox.findIndex((item) => (item.sourceMessageIds ?? []).includes(message.message_id))
+  }
   const previous = previousIndex >= 0 ? inbox[previousIndex] : null
-  const classifiedText = text || previous?.text || ''
+  const previousPhotoPaths = previous?.photoPaths ?? (previous?.photoPath ? [previous.photoPath] : [])
+  const editedPhotoPrefix = `${message.chat.id}-${message.message_id}`
+  const isPreviousPhotoForEditedMessage = (photoPath) => {
+    const filename = path.posix.basename(photoPath)
+    return filename === `${editedPhotoPrefix}.jpg`
+      || filename.startsWith(`${editedPhotoPrefix}-`)
+      || filename.startsWith(`export-${message.message_id}-`)
+  }
+  const photoPaths = isEdited
+    ? previousPhotoPaths.filter((photoPath) => !isPreviousPhotoForEditedMessage(photoPath))
+    : [...previousPhotoPaths]
+  if (localPhoto && !photoPaths.includes(localPhoto)) photoPaths.push(localPhoto)
+  const classifiedText = isEdited ? text : (text || previous?.text || '')
   const classified = classify(classifiedText)
   const chosenCategory = session?.categoryTitle ?? previous?.selectedCategory ?? null
+  const hasDocument = isEdited ? Boolean(message.document) : Boolean(message.document || previous?.hasDocument)
+  const hasVideo = isEdited
+    ? Boolean(message.video || message.animation)
+    : Boolean(message.video || message.animation || previous?.hasVideo)
+  const hasPhoto = photoPaths.length > 0
+  const revisionHistory = [...(previous?.revisionHistory ?? [])]
+  const sourceChanged = previous && (
+    previous.text !== classifiedText
+    || previous.editedAt !== (message.edit_date ? new Date(message.edit_date * 1000).toISOString() : null)
+    || JSON.stringify(previous.photoPaths ?? []) !== JSON.stringify(photoPaths)
+    || Boolean(previous.hasDocument) !== hasDocument
+    || Boolean(previous.hasVideo) !== hasVideo
+  )
+  if (sourceChanged) {
+    revisionHistory.push({
+      sourceUpdateId: previous.sourceUpdateId ?? null,
+      date: previous.date ?? null,
+      editedAt: previous.editedAt ?? null,
+      text: previous.text ?? '',
+      photoPaths: previousPhotoPaths,
+      hasDocument: Boolean(previous.hasDocument),
+      hasVideo: Boolean(previous.hasVideo),
+    })
+  }
   const record = {
-    recordKey,
+    recordKey: previous?.recordKey ?? computedRecordKey,
     sourceUpdateId: updateId,
     sourceMessageId: previous?.sourceMessageId ?? message.message_id,
     sourceChatId: String(message.chat.id),
@@ -360,10 +476,12 @@ async function processMessage(message, updateId, inbox) {
     selectedCategory: chosenCategory,
     inputMode: chosenCategory ? 'category-menu' : 'automatic',
     text: classifiedText,
-    hasPhoto: Boolean(photo || previous?.hasPhoto),
-    hasDocument: Boolean(message.document || previous?.hasDocument),
-    hasVideo: Boolean(message.video || message.animation || previous?.hasVideo),
-    photoPaths: [...new Set([...(previous?.photoPaths ?? (previous?.photoPath ? [previous.photoPath] : [])), ...(localPhoto ? [localPhoto] : [])])],
+    hasPhoto,
+    hasDocument,
+    hasVideo,
+    photoPaths: [...new Set(photoPaths)],
+    revisionHistory,
+    importSource: 'telegram-live',
     review: 'unreviewed',
   }
   if (previousIndex >= 0) inbox[previousIndex] = record
@@ -387,15 +505,36 @@ async function runBot() {
   const me = await telegram('getMe')
   botUsername = me.username
   await telegram('setMyCommands', {
+    scope: { type: 'all_private_chats' },
+    commands: [
+      { command: 'start', description: 'شروع گفت‌وگو با بات' },
+      { command: 'new', description: 'ثبت گزارش تازه' },
+      { command: 'cancel', description: 'لغو ثبت گزارش' },
+      { command: 'help', description: 'راهنمای بات' },
+      { command: 'status', description: 'وضعیت بات و صندوق' },
+      { command: 'pending', description: 'گزارش‌های بررسی‌نشده' },
+    ],
+  })
+  await telegram('setMyCommands', {
+    scope: { type: 'all_group_chats' },
     commands: [
       { command: 'new', description: 'ثبت گزارش دسته‌بندی‌شده' },
       { command: 'cancel', description: 'لغو ثبت گزارش' },
       { command: 'help', description: 'راهنمای ثبت گزارش' },
     ],
   })
+  await telegram('setMyCommands', {
+    commands: [
+      { command: 'start', description: 'شروع گفت‌وگو با بات' },
+      { command: 'new', description: 'ثبت گزارش دسته‌بندی‌شده' },
+      { command: 'cancel', description: 'لغو ثبت گزارش' },
+      { command: 'help', description: 'راهنمای ثبت گزارش' },
+      { command: 'status', description: 'وضعیت بات و صندوق' },
+      { command: 'pending', description: 'گزارش‌های بررسی‌نشده' },
+    ],
+  })
   let state = await readJson(stateFile, { lastUpdateId: 0 })
-  state = { lastUpdateId: Number(state.lastUpdateId ?? 0) }
-  const inbox = await readJson(inboxFile, [])
+  state = { ...state, lastUpdateId: Number(state.lastUpdateId ?? 0) }
   const targetGroup = await telegram('getChat', { chat_id: groupId })
   if (!['group', 'supergroup'].includes(targetGroup.type) || targetGroup.title !== authorizedGroupTitle) {
     throw new Error(`Configured group must be exactly: ${authorizedGroupTitle}`)
@@ -409,12 +548,15 @@ async function runBot() {
     checkedAt: new Date().toISOString(),
     groupTitle: targetGroup.title,
     automaticCapture,
+    privacyModeDisabled: Boolean(me.can_read_all_group_messages),
+    groupMembershipStatus: membership.status,
     receivesOrdinaryMessages,
     publication: 'pending-assistant-review',
     ...(lastSuccessfulPollAt ? { lastSuccessfulPollAt } : {}),
+    ...(state.lastOrdinaryGroupMessageAt ? { lastOrdinaryGroupMessageAt: state.lastOrdinaryGroupMessageAt } : {}),
     ...extra,
   })
-  await writeHealth({ receiverProcessId: process.pid, status: 'connected' })
+  await writeHealth({ receiverProcessId: process.pid, status: 'connecting' })
   if (automaticCapture && !me.can_read_all_group_messages && membership.status !== 'administrator') {
     console.warn('ACTION REQUIRED: Telegram privacy mode prevents ordinary group report delivery. Disable bot privacy in BotFather, then remove and re-add the bot to this group, or grant administrator membership in this group.')
   }
@@ -425,7 +567,7 @@ async function runBot() {
       updates = await telegram('getUpdates', {
         offset: Number(state.lastUpdateId ?? 0) + 1,
         limit: 100,
-        timeout: 30,
+        timeout: 15,
         allowed_updates: ['message', 'edited_message', 'callback_query'],
       })
       lastSuccessfulPollAt = new Date().toISOString()
@@ -442,11 +584,20 @@ async function runBot() {
       try {
         if (update.callback_query) await processCategorySelection(update.callback_query)
         const message = update.message ?? update.edited_message
-        const changed = message ? await processMessage(message, update.update_id, inbox) : false
-        if (changed) await writeJsonAtomically(inboxFile, inbox)
+        const changed = message ? await withTelegramInboxLock(async () => {
+          const inbox = await readJson(inboxFile, [])
+          if (!Array.isArray(inbox)) throw new Error('The private Telegram inbox is not an array.')
+          const captured = await processMessage(message, update.update_id, inbox)
+          if (captured) await writeJsonAtomically(inboxFile, inbox)
+          return captured
+        }) : false
+        if (changed) {
+          state.lastOrdinaryGroupMessageAt = new Date().toISOString()
+        }
         state.lastUpdateId = update.update_id
         state.lastReceivedAt = new Date().toISOString()
         await writeJsonAtomically(stateFile, state)
+        if (changed) await writeHealth({ receiverProcessId: process.pid, status: 'connected' })
       } catch (error) {
         console.error(`Update ${update.update_id} failed: ${error.message}. Retrying without advancing the cursor.`)
         break

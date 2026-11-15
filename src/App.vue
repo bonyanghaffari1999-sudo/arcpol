@@ -1,25 +1,40 @@
 <script setup>
-import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import siteData from './site-data.json'
-import telegramProjectRecords from './telegram-projects.json'
-import telegramReportRecords from './telegram-reports.json'
-import articleDetailsData from './article-details.json'
-import adminOverridesFile from './admin-overrides.json'
+import { computed, defineAsyncComponent, inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import siteDataFallback from './site-data.json'
+import telegramProjectFallback from './telegram-projects.json'
+import telegramReportFallback from './telegram-reports.json'
+import articleDetailsFallback from './article-details.json'
+import adminOverridesFallback from './admin-overrides.json'
 import { additionalServices as defaultAdditionalServices, company as defaultCompany, disciplines as defaultDisciplines, engagementModels as defaultEngagementModels, mission as defaultMission, principles as defaultPrinciples, serviceGroups as defaultServiceGroups, sourceAboutProfile as defaultSourceAboutProfile, teamDirectory as defaultTeamDirectory, teamResponsibilities as defaultTeamResponsibilities, vision as defaultVision } from './content.js'
 import { applyAdminPatch, idAdminKey, mergeAdminCollection, normalizeAdminOverrides, projectAdminKey } from './admin-data.js'
+import { formatNumber, numberLocale } from './i18n/numbers.js'
 import SiteHeader from './components/common/SiteHeader.vue'
 import SiteFooter from './components/common/SiteFooter.vue'
-import HomePage from './components/home/HomePage.vue'
-import AboutPage from './components/about/AboutPage.vue'
-import ArticlesPage from './components/articles/ArticlesPage.vue'
-import ContactPage from './components/contact/ContactPage.vue'
-import FeedbackPage from './components/feedback/FeedbackPage.vue'
-import ProjectsPage from './components/projects/ProjectsPage.vue'
-import ServicesPage from './components/services/ServicesPage.vue'
-import AdminPage from './components/admin/AdminPage.vue'
-import PortalPage from './components/portal/PortalPage.vue'
 import { findServiceEvidence } from './service-details.js'
+import { countDocumentedProjectRecords, isCodedTelegramProject, isDocumentedCompanyProject } from './project-archive.js'
+import { projectTerm } from './i18n/projects-en.js'
+import { articleTitle } from './i18n/other-pages-en.js'
+import { serviceNamesEn } from './i18n/services-en.js'
+import { canonicalOrigin, normalizeServiceName, serviceBySlug, serviceSlug } from './service-routes.js'
+import telegramSyncMetaFallback from './telegram-sync-meta.json'
 
+const siteDocuments = inject('siteContentDocuments', {})
+const siteData = siteDocuments.siteData || siteDataFallback
+const telegramProjectRecords = siteDocuments.telegramProjects || telegramProjectFallback
+const telegramReportRecords = siteDocuments.telegramReports || telegramReportFallback
+const articleDetailsData = siteDocuments.articleDetails || articleDetailsFallback
+const adminOverridesFile = siteDocuments.adminOverrides || adminOverridesFallback
+const telegramSyncMeta = siteDocuments.telegramSyncMeta || telegramSyncMetaFallback
+
+const HomePage = defineAsyncComponent(() => import('./components/home/HomePage.vue'))
+const AboutPage = defineAsyncComponent(() => import('./components/about/AboutPage.vue'))
+const ArticlesPage = defineAsyncComponent(() => import('./components/articles/ArticlesPage.vue'))
+const ContactPage = defineAsyncComponent(() => import('./components/contact/ContactPage.vue'))
+const FeedbackPage = defineAsyncComponent(() => import('./components/feedback/FeedbackPage.vue'))
+const ProjectsPage = defineAsyncComponent(() => import('./components/projects/ProjectsPage.vue'))
+const ServicesPage = defineAsyncComponent(() => import('./components/services/ServicesPage.vue'))
+const AdminPage = defineAsyncComponent(() => import('./components/admin/AdminPage.vue'))
+const PortalPage = defineAsyncComponent(() => import('./components/portal/PortalPage.vue'))
 const BuildingExplorer = defineAsyncComponent(() => import('./components/building/BuildingExplorer.vue'))
 
 function keepPhotographedReports(record) {
@@ -46,10 +61,32 @@ function keepPhotographedReports(record) {
   }
 }
 
-const picturedTelegramRecords = [...telegramProjectRecords, ...telegramReportRecords]
-  .map(keepPhotographedReports)
-  .filter(Boolean)
-const baseProjects = [...siteData.projects, ...picturedTelegramRecords]
+const picturedTelegramRecords = ref([])
+const projectArchiveLoaded = ref(false)
+const projectArchiveLoading = ref(false)
+const projectArchiveError = ref(false)
+let projectArchivePromise = null
+function loadProjectArchive() {
+  if (projectArchiveLoaded.value) return Promise.resolve()
+  if (projectArchivePromise) return projectArchivePromise
+
+  projectArchiveLoading.value = true
+  projectArchiveError.value = false
+  projectArchivePromise = Promise.resolve().then(() => {
+    picturedTelegramRecords.value = [...telegramProjectRecords, ...telegramReportRecords]
+      .map(keepPhotographedReports)
+      .filter(Boolean)
+    projectArchiveLoaded.value = true
+  }).catch(() => {
+    projectArchiveError.value = true
+    projectArchivePromise = null
+  }).finally(() => {
+    projectArchiveLoading.value = false
+  })
+
+  return projectArchivePromise
+}
+const baseProjects = computed(() => [...siteData.projects, ...picturedTelegramRecords.value])
 const baseArticles = siteData.articles
 const baseArticleDetails = articleDetailsData
 const baseSiteContent = {
@@ -59,6 +96,7 @@ const baseSiteContent = {
   mission: defaultMission,
   principles: defaultPrinciples,
   serviceGroups: defaultServiceGroups,
+  serviceExamples: [],
   additionalServices: defaultAdditionalServices,
   sourceAboutProfile: defaultSourceAboutProfile,
   teamDirectory: defaultTeamDirectory,
@@ -89,7 +127,9 @@ const baseSiteContent = {
 }
 const adminOverrides = ref(normalizeAdminOverrides(adminOverridesFile))
 const adminEnabled = ref(false)
+const adminReady = ref(false)
 const adminHasBackup = ref(false)
+const adminStorage = ref('json')
 const adminFeedback = ref([])
 const adminContactRequests = ref([])
 const siteContent = computed(() => applyAdminPatch(baseSiteContent, adminOverrides.value.siteContent))
@@ -115,14 +155,84 @@ const teamDirectory = computed(() => (siteContent.value.teamDirectory || []).map
     photo: member.photoKey ? siteMedia.value[member.photoKey] || '' : '',
   })),
 })))
-const allProjects = computed(() => mergeAdminCollection(baseProjects, adminOverrides.value.projects, projectAdminKey))
+const allProjects = computed(() => mergeAdminCollection(baseProjects.value, adminOverrides.value.projects, projectAdminKey))
 const projects = computed(() => allProjects.value.filter((item) => item.adminStatus !== 'draft'))
 const allArticles = computed(() => mergeAdminCollection(baseArticles, adminOverrides.value.articles, idAdminKey))
 const articles = computed(() => allArticles.value.filter((item) => item.adminStatus !== 'draft'))
 const articleDetails = computed(() => mergeAdminCollection(baseArticleDetails, adminOverrides.value.articleDetails, idAdminKey))
 const articleDetailsById = computed(() => Object.fromEntries(articleDetails.value.map((item) => [item.id, item])))
 const menuOpen = ref(false)
-const routePath = ref(window.location.hash.replace(/^#/, '') || '/')
+function catalogServiceNames() {
+  return [...new Set([...serviceGroups.value.flatMap((group) => group.items), ...additionalServices.value])]
+}
+function normalizeRoute(rawRoute) {
+  const target = new URL(rawRoute || '/', window.location.origin)
+  let pathname = target.pathname.replace(/\/+$/, '') || '/'
+  const params = new URLSearchParams(target.search)
+  if (pathname === '/services') {
+    const requested = params.get('service')
+    const names = catalogServiceNames()
+    const selected = names.find((name) => normalizeServiceName(name) === normalizeServiceName(requested))
+      || serviceBySlug(requested, names)
+    if (selected) {
+      pathname = `/services/${serviceSlug(selected)}`
+      params.delete('service')
+      params.delete('category')
+    }
+  } else if (pathname.startsWith('/services/')) {
+    let routeKey = pathname.slice('/services/'.length)
+    try { routeKey = decodeURIComponent(routeKey) } catch { /* Keep malformed routes available for the not-found view. */ }
+    const names = catalogServiceNames()
+    const selected = serviceBySlug(routeKey, names)
+      || names.find((name) => normalizeServiceName(name) === normalizeServiceName(routeKey))
+    if (selected) pathname = `/services/${serviceSlug(selected)}`
+  }
+  const query = params.toString()
+  const canonicalPathname = pathname === '/' ? '/' : `${pathname}/`
+  return `${canonicalPathname}${query ? `?${query}` : ''}`
+}
+function routeFromLocation() {
+  const legacyHash = window.location.hash.startsWith('#/')
+  const requested = legacyHash
+    ? window.location.hash.slice(1)
+    : `${window.location.pathname}${window.location.search}`
+  return normalizeRoute(requested)
+}
+const routePath = ref(routeFromLocation())
+function writeRoute(nextRoute, { replace = false } = {}) {
+  const normalized = normalizeRoute(nextRoute)
+  if (replace) window.history.replaceState(window.history.state, '', normalized)
+  else window.history.pushState(window.history.state, '', normalized)
+  syncRoute()
+}
+function handleRouteClick(event) {
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+  const anchor = event.target.closest?.('a[href]')
+  if (!anchor || anchor.hasAttribute('download') || (anchor.target && anchor.target !== '_self')) return
+  const rawHref = anchor.getAttribute('href') || ''
+  if (!rawHref || rawHref.startsWith('#')) return
+  const target = new URL(rawHref, window.location.href)
+  if (target.origin !== window.location.origin) return
+  const route = normalizeRoute(`${target.pathname}${target.search}`)
+  if (!/^\/(?:$|services(?:\/|$)|projects(?:\/|$)|articles(?:\/|$)|building(?:\/|$)|about(?:\/|$)|contact(?:\/|$)|feedback(?:\/|$)|portal(?:\/|$)|admin(?:\/|$))/.test(route)) return
+  event.preventDefault()
+  writeRoute(route)
+}
+function savedLocale() {
+  const requested = new URLSearchParams(routePath.value.split('?')[1] || '').get('lang')
+  if (requested === 'en' || requested === 'fa') return requested
+  try { return localStorage.getItem('arcpol-language') === 'en' ? 'en' : 'fa' } catch { return 'fa' }
+}
+const locale = ref(savedLocale())
+function changeLocale(value) {
+  if (!['fa', 'en'].includes(value)) return
+  locale.value = value
+  try { localStorage.setItem('arcpol-language', value) } catch { /* Storage is optional. */ }
+  const [path, query = ''] = routePath.value.split('?')
+  const params = new URLSearchParams(query)
+  params.set('lang', value)
+  writeRoute(`${path || '/'}?${params}`)
+}
 const projectFilter = ref('all')
 const projectSourceFilter = ref('all')
 const projectCategoryFilter = ref('all')
@@ -137,7 +247,23 @@ const feedbackRating = ref('5')
 const lastProjectTrigger = ref(null)
 
 function syncRoute() {
-  routePath.value = window.location.hash.replace(/^#/, '') || '/'
+  const legacyHash = window.location.hash.startsWith('#/')
+  routePath.value = routeFromLocation()
+  const currentAddress = `${window.location.pathname}${window.location.search}`
+  if (legacyHash || currentAddress !== routePath.value) {
+    window.history.replaceState(window.history.state, '', routePath.value)
+  }
+  const requested = new URLSearchParams(routePath.value.split('?')[1] || '').get('lang')
+  if (requested === 'en' || requested === 'fa') {
+    locale.value = requested
+    try { localStorage.setItem('arcpol-language', requested) } catch { /* Storage is optional. */ }
+  } else if (locale.value === 'en' && routePath.value.startsWith('/')) {
+    const [path, query = ''] = routePath.value.split('?')
+    const params = new URLSearchParams(query)
+    params.set('lang', 'en')
+    routePath.value = `${path}?${params}`
+    window.history.replaceState(window.history.state, '', routePath.value)
+  }
   menuOpen.value = false
 }
 
@@ -146,10 +272,160 @@ const routeQuery = computed(() => new URLSearchParams(routePath.value.split('?')
 const page = computed(() => segments.value[0] || 'home')
 const adminRoute = computed(() => page.value === 'admin')
 const detailId = computed(() => Number(segments.value[1]) || null)
-const currentPage = computed(() => adminRoute.value ? '' : (['services', 'projects', 'about', 'articles', 'contact', 'feedback', 'portal', 'building'].includes(page.value) ? page.value : 'home'))
+const serviceNameFromRoute = computed(() => {
+  const names = catalogServiceNames()
+  const routeSegment = segments.value[1]
+  if (page.value === 'services' && routeSegment) {
+    let routeKey = routeSegment
+    try { routeKey = decodeURIComponent(routeKey) } catch { /* An invalid route is handled as not found. */ }
+    return serviceBySlug(routeKey, names)
+      || names.find((name) => normalizeServiceName(name) === normalizeServiceName(routeKey))
+      || ''
+  }
+  if (page.value === 'services' || page.value === 'building' || page.value === 'contact') {
+    const requested = routeQuery.value.get('service') || ''
+    return names.find((name) => normalizeServiceName(name) === normalizeServiceName(requested)) || ''
+  }
+  return ''
+})
+const routeNotFound = computed(() => {
+  if (!['home', 'services', 'projects', 'about', 'articles', 'contact', 'feedback', 'portal', 'building', 'admin'].includes(page.value)) return true
+  if (page.value === 'services') return segments.value.length > 2 || (segments.value.length === 2 && !serviceNameFromRoute.value)
+  if (page.value === 'projects') {
+    if (segments.value.length > 2 || (segments.value.length === 2 && !detailId.value)) return true
+    return Boolean(detailId.value && projectArchiveLoaded.value && !projects.value.some((item) => item.id === detailId.value))
+  }
+  if (page.value === 'articles') return segments.value.length > 2 || (segments.value.length === 2 && (!detailId.value || !articles.value.some((item) => item.id === detailId.value)))
+  return page.value !== 'home' && segments.value.length > 1
+})
+const currentPage = computed(() => adminRoute.value ? '' : routeNotFound.value ? 'not-found' : page.value)
+const englishPageReady = computed(() => ['home', 'services', 'contact', 'projects', 'about', 'articles', 'building', 'portal', 'feedback', 'not-found'].includes(currentPage.value))
+const pageHead = computed(() => {
+  const pages = {
+    fa: {
+      home: ['Arcpol | مهندسی و ساخت ساختمان', 'خدمات یکپارچهٔ مهندسی و ساخت ساختمان، از مطالعات خاک و طراحی تا نظارت، اجرا و نقشه‌های چون‌ساخت.'],
+      services: ['خدمات مهندسی ساختمان | Arcpol', 'خدمات مهندسی و ساخت ساختمان را از طراحی و آزمایش تا نظارت و اجرا مرور کنید.'],
+      building: ['ساختمان تعاملی | Arcpol', 'مدل مفهومی ساختمان را مرحله‌به‌مرحله ببینید و خدمات مرتبط را روی اجزای آن پیدا کنید.'],
+      projects: ['آرشیو پروژه‌ها | Arcpol', 'سوابق مستند پروژه‌ها، گروه‌های کددار و گزارش‌های تصویری کارگاهی شرکت را مرور کنید.'],
+      about: ['دربارهٔ Arcpol | مهندسی و ساخت', 'با حوزه‌های مهندسی، ساختار خدمات و روش همکاری Arcpol آشنا شوید.'],
+      articles: ['مقالات و دانش فنی | Arcpol', 'مقاله‌ها، مستندات فنی و منابع ثبت‌شده در آرشیو Arcpol را مرور کنید.'],
+      contact: ['تماس با Arcpol | دفتر و خدمات مهندسی', 'برای گفت‌وگو دربارهٔ خدمات مهندسی و ساخت ساختمان از راه‌های رسمی با Arcpol تماس بگیرید.'],
+      feedback: ['ثبت بازخورد | Arcpol', 'پیشنهاد یا تجربهٔ همکاری خود را در فرم بازخورد ثبت کنید.'],
+      portal: ['نمونهٔ پنل مشتریان | Arcpol', 'پیش‌نمایش نمایشیِ پنل مشتریان؛ اطلاعات این صفحه ساختگی است و به پروژهٔ واقعی متصل نیست.'],
+      'not-found': ['صفحه پیدا نشد | Arcpol', 'صفحهٔ درخواستی در وب‌سایت Arcpol پیدا نشد.'],
+    },
+    en: {
+      home: ['ARCPOL | Engineering & Construction', 'Integrated building engineering and construction services, from ground studies and design to supervision, construction and as-built drawings.'],
+      services: ['Building Engineering Services | ARCPOL', 'Explore building engineering and construction services, from design and testing through supervision and construction.'],
+      building: ['Interactive Building | ARCPOL', 'Explore a conceptual building model stage by stage and find related services on its components.'],
+      projects: ['Project Archive | ARCPOL', 'Browse documented project records, coded groups and photographic site reports.'],
+      about: ['About ARCPOL | Engineering & Construction', 'Learn about ARCPOL’s engineering disciplines, service scope and ways of working.'],
+      articles: ['Articles & Technical Resources | ARCPOL', 'Browse articles, technical documents and resources recorded in the ARCPOL archive.'],
+      contact: ['Contact ARCPOL | Engineering Services', 'Contact ARCPOL through the company’s official channels to discuss building engineering and construction services.'],
+      feedback: ['Share Feedback | ARCPOL', 'Share a suggestion or an experience from working with ARCPOL.'],
+      portal: ['Client Portal Demo | ARCPOL', 'A sample preview of the client portal. All information on this page is fictional and is not connected to a real project.'],
+      'not-found': ['Page not found | ARCPOL', 'The requested page could not be found on the ARCPOL website.'],
+    },
+  }
+  const language = locale.value === 'en' ? 'en' : 'fa'
+  const fallback = language === 'en'
+    ? ['ARCPOL | Local content management', 'Local content management for the ARCPOL site.']
+    : ['پنل مدیریت محلی | Arcpol', 'مدیریت محلی محتوای سایت Arcpol.']
+  if (currentPage.value === 'services' && serviceNameFromRoute.value) {
+    const service = serviceNameFromRoute.value
+    const displayName = language === 'en' ? serviceNamesEn[service] || service : service
+    const title = language === 'en' ? `${displayName} | ARCPOL` : `${displayName} | خدمات Arcpol`
+    const description = language === 'en'
+      ? `Learn about ${displayName} within ARCPOL’s building engineering and construction services.`
+      : `دامنهٔ خدمت ${service} در سبد مهندسی و ساخت ساختمان Arcpol را ببینید.`
+    return [title, description]
+  }
+  if (currentPage.value === 'projects' && detailId.value) {
+    const project = projects.value.find((item) => item.id === detailId.value)
+    if (project) {
+      const title = projectTitle(project)
+      const displayTitle = language === 'en' ? projectTerm(title, 'en') : title
+      const description = project.description || (language === 'en' ? 'A documented project record from the ARCPOL archive.' : 'یک رکورد مستند از آرشیو پروژه‌های Arcpol.')
+      return [language === 'en' ? `${displayTitle} | ARCPOL` : `${displayTitle} | Arcpol`, description]
+    }
+  }
+  if (currentPage.value === 'articles' && detailId.value) {
+    const article = articles.value.find((item) => item.id === detailId.value)
+    if (article) {
+      const title = language === 'en' ? articleTitle(article) : article.title
+      const description = article.excerpt || (language === 'en' ? 'An article from the ARCPOL technical archive.' : 'مقاله‌ای از آرشیو فنی Arcpol.')
+      return [language === 'en' ? `${title} | ARCPOL` : `${title} | Arcpol`, description]
+    }
+  }
+  return pages[language][currentPage.value] || fallback
+})
+const canonicalPath = computed(() => {
+  const [path] = routePath.value.split('?')
+  return path === '/admin/' || currentPage.value === 'not-found' ? '/' : path
+})
+const pageShareImage = computed(() => {
+  if (currentPage.value === 'projects' && detailId.value) {
+    const project = projects.value.find((item) => item.id === detailId.value)
+    return projectImagesFor(project)[0] || '/Uploads/PrjData/bdff6df7-b413-4f86-8b8b-c89fe695d30d.jpg'
+  }
+  if (currentPage.value === 'articles' && detailId.value) {
+    return articles.value.find((item) => item.id === detailId.value)?.image || '/images/590856/2.jpg'
+  }
+  return '/Uploads/PrjData/bdff6df7-b413-4f86-8b8b-c89fe695d30d.jpg'
+})
+watch([locale, pageHead, canonicalPath, pageShareImage], ([value, [title, description], path, image]) => {
+  document.documentElement.lang = value
+  document.documentElement.dir = value === 'en' ? 'ltr' : 'rtl'
+  document.title = title
+  document.querySelector('meta[name="description"]')?.setAttribute('content', description)
+  document.querySelector('meta[name="twitter:title"]')?.setAttribute('content', title)
+  document.querySelector('meta[property="og:title"]')?.setAttribute('content', title)
+  document.querySelector('meta[property="og:description"]')?.setAttribute('content', description)
+  document.querySelector('meta[property="og:url"]')?.setAttribute('content', `${canonicalOrigin}${path}`)
+  document.querySelector('meta[property="og:locale"]')?.setAttribute('content', value === 'en' ? 'en_US' : 'fa_IR')
+  document.querySelector('meta[property="og:image"]')?.setAttribute('content', `${canonicalOrigin}${image}`)
+  document.querySelector('meta[name="twitter:image"]')?.setAttribute('content', `${canonicalOrigin}${image}`)
+  document.querySelector('meta[name="twitter:description"]')?.setAttribute('content', description)
+  document.querySelector('link[rel="canonical"]')?.setAttribute('href', `${canonicalOrigin}${path}`)
+  try { localStorage.setItem('arcpol-language', value) } catch { /* Storage is optional. */ }
+}, { immediate: true })
+watch(adminRoute, (isAdmin) => {
+  adminReady.value = false
+  if (isAdmin) loadLocalAdmin()
+}, { immediate: true })
 const serviceCategoryFromRoute = computed(() => routeQuery.value.get('category') || 'all')
-const serviceNameFromRoute = computed(() => routeQuery.value.get('service') || '')
-const selectedServiceEvidence = computed(() => findServiceEvidence(serviceNameFromRoute.value, projects.value))
+watch([currentPage, serviceNameFromRoute], ([activePage, service]) => {
+  if (['projects', 'building'].includes(activePage) || (activePage === 'services' && service)) loadProjectArchive()
+  if (adminRoute.value) loadProjectArchive()
+}, { immediate: true })
+const selectedServiceEvidence = computed(() => {
+  const service = serviceNameFromRoute.value
+  if (!service) return []
+  const curated = (siteContent.value.serviceExamples || []).flatMap((entry) => {
+    if (entry.service !== service) return []
+    const project = projects.value.find((record) => projectAdminKey(record) === String(entry.projectKey))
+    const images = [...(project?.images || []), ...(project?.timeline || []).map((event) => event.image)].filter(Boolean)
+    if (!project || !images.includes(entry.image)) return []
+    const event = (project.timeline || []).find((item) => item.image === entry.image)
+    return [{
+      image: entry.image,
+      projectId: project.id,
+      code: project.code || `${project.source || 'company'}:${project.id}`,
+      usage: project.usage || 'ساختمانی',
+      date: event?.date || project.updatedAt || null,
+      keyword: service,
+      summary: '',
+      sourceKind: 'company-curated',
+    }]
+  })
+  const archive = findServiceEvidence(service, projects.value)
+  const seen = new Set()
+  return [...curated, ...archive].filter((item) => {
+    if (seen.has(item.image)) return false
+    seen.add(item.image)
+    return true
+  }).slice(0, 4)
+})
 const navigation = [
   { label: 'خانه', path: '/', key: 'home' },
   { label: 'خدمات', path: '/services', key: 'services' },
@@ -161,8 +437,10 @@ const navigation = [
   { label: 'تماس', path: '/contact', key: 'contact' },
 ]
 const sourceFilteredProjects = computed(() => projects.value.filter((item) => projectSourceFilter.value === 'all'
-  || (projectSourceFilter.value === 'company' && (!item.source || item.source === 'manual'))
-  || (projectSourceFilter.value === 'linked' && item.source === 'field-reports')
+  || (projectSourceFilter.value === 'company' && isDocumentedCompanyProject(item))
+  || (projectSourceFilter.value === 'previousSite' && !item.source)
+  || (projectSourceFilter.value === 'linked' && isCodedTelegramProject(item))
+  || (projectSourceFilter.value === 'unassigned' && item.source === 'field-reports' && !isCodedTelegramProject(item))
   || (projectSourceFilter.value === 'independent' && item.source === 'telegram-report')))
 const inProgressCount = computed(() => sourceFilteredProjects.value.filter((item) => item.status === 'in-progress').length)
 const completedCount = computed(() => sourceFilteredProjects.value.filter((item) => item.status === 'completed').length)
@@ -170,18 +448,54 @@ const historyCount = computed(() => sourceFilteredProjects.value.filter((item) =
 const projectCategories = computed(() => [...new Set(projects.value.map(projectCategory))])
 const projectSourceCounts = computed(() => ({
   all: projects.value.length,
-  company: projects.value.filter((item) => !item.source || item.source === 'manual').length,
-  linked: projects.value.filter((item) => item.source === 'field-reports').length,
+  company: countDocumentedProjectRecords(projects.value),
+  previousSite: projects.value.filter((item) => !item.source).length,
+  manual: projects.value.filter((item) => item.source === 'manual').length,
+  linked: projects.value.filter(isCodedTelegramProject).length,
+  unassigned: projects.value.filter((item) => item.source === 'field-reports' && !isCodedTelegramProject(item)).length,
   independent: projects.value.filter((item) => item.source === 'telegram-report').length,
+  documentedProjectRecords: countDocumentedProjectRecords(projects.value),
 }))
+const summaryProjects = computed(() => mergeAdminCollection(siteData.projects, adminOverrides.value.projects, projectAdminKey)
+  .filter((item) => item.adminStatus !== 'draft'))
+const homeProjectCounts = computed(() => {
+  if (projectArchiveLoaded.value) return projectSourceCounts.value
+  const records = summaryProjects.value
+  const previousSite = records.filter((item) => !item.source).length
+  const manual = records.filter((item) => item.source === 'manual').length
+  const linkedAdded = records.filter(isCodedTelegramProject).length
+  return {
+    previousSite,
+    manual,
+    linked: Number(telegramSyncMeta.publishedLinkedRecords || 0) + linkedAdded,
+    unassigned: records.filter((item) => item.source === 'field-reports' && !isCodedTelegramProject(item)).length,
+    independent: Number(telegramSyncMeta.publishedIndependentReports || 0),
+    documentedProjectRecords: previousSite + manual + Number(telegramSyncMeta.publishedLinkedRecords || 0) + linkedAdded,
+  }
+})
 const projectUsages = ['مسکونی', 'تجاری']
 const highlightedProjects = computed(() => (siteMedia.value.featuredProjectIds || []).map((id) => projects.value.find((item) => item.id === Number(id))).filter(Boolean))
-const uniquePhotoCount = computed(() => new Set(projects.value.flatMap(projectImagesFor)).size)
-const homeStats = computed(() => [
-  { value: displayNumber(projects.value.filter((item) => !item.source || item.source === 'manual').length), label: 'پروژه‌های شرکت' },
-  { value: displayNumber(uniquePhotoCount.value), label: 'تصویر یکتا در آرشیو' },
-  { value: displayNumber(disciplines.value.length), label: 'رشته‌های اصلی ساختمان' },
-])
+const homeStats = computed(() => {
+  const number = (value) => formatNumber(value, locale.value)
+  const serviceCount = new Set([...serviceGroups.value.flatMap((group) => group.items), ...additionalServices.value]).size
+  return [
+    { value: number(homeProjectCounts.value.documentedProjectRecords), label: locale.value === 'en' ? 'Company project portfolio' : 'پروژه‌ها و سوابق شرکت' },
+    { value: number(serviceCount), label: locale.value === 'en' ? 'Listed engineering services' : 'خدمات فهرست‌شدهٔ شرکت' },
+    { value: number(disciplines.value.length), label: locale.value === 'en' ? 'Core building design disciplines' : 'رشته‌های اصلی طراحی ساختمان' },
+  ]
+})
+const homeStatsNote = computed(() => {
+  const counts = homeProjectCounts.value
+  const number = (value) => formatNumber(value, locale.value)
+  const archiveSources = [
+    locale.value === 'en' ? `${number(counts.previousSite)} former-site records` : `${number(counts.previousSite)} سابقهٔ سایت پیشین`,
+    locale.value === 'en' ? `${number(counts.linked)} coded Telegram groups` : `${number(counts.linked)} گروه تلگرام کددار`,
+    ...(counts.manual ? [locale.value === 'en' ? `${number(counts.manual)} company-added records` : `${number(counts.manual)} رکورد افزوده‌شدهٔ شرکت`] : []),
+  ].join(locale.value === 'en' ? ' + ' : ' + ')
+  return locale.value === 'en'
+    ? `This count combines ${archiveSources}; it represents documented archive records and groups, not a deduplicated total of unique real-world projects. ${number(counts.unassigned)} uncoded photo entries and ${number(counts.independent)} independent site reports remain separate because they have no reliable shared project identifier.`
+    : `این عدد از ${archiveSources} به‌دست آمده و شمار سوابق و گروه‌های آرشیوی را نشان می‌دهد، نه تعداد قطعی پروژه‌های یکتای واقعی. ${number(counts.unassigned)} ورودی تصویریِ بدون کد و ${number(counts.independent)} گزارش مستقل کارگاهی جدا مانده‌اند، چون شناسهٔ مشترکِ قابل‌اتکایی برای اتصال به سوابق پروژه ندارند.`
+})
 const selectedProject = computed(() => page.value === 'projects' && detailId.value ? projects.value.find((item) => item.id === detailId.value) : null)
 const selectedArticle = computed(() => page.value === 'articles' && detailId.value ? articles.value.find((item) => item.id === detailId.value) : null)
 const selectedArticleContent = computed(() => selectedArticle.value ? articleDetailsById.value[selectedArticle.value.id] : null)
@@ -203,20 +517,21 @@ const filteredProjects = computed(() => sourceFilteredProjects.value.filter((pro
   const matchesUsage = projectUsageFilter.value === 'all' || project.usage === projectUsageFilter.value
   const needle = normalize(projectSearch.value)
   const reportText = (project.timeline || []).flatMap((entry) => [entry.title, entry.summary, entry.focus]).join(' ')
-  const matchesSearch = !needle || normalize([project.code || `G-${project.id}`, project.type, project.address, project.usage, project.description, ...(project.tags || []), ...(project.services || []), reportText].join(' ')).includes(needle)
+  const searchable = [project.code, project.id, project.type, project.address, project.usage, project.description, ...(project.tags || []), ...(project.services || []), reportText]
+  const matchesSearch = !needle || normalize([...searchable, ...searchable.map((value) => projectTerm(value, 'en'))].join(' ')).includes(needle)
   return matchesStatus && matchesCategory && matchesUsage && matchesSearch
 }))
 const visibleProjects = computed(() => filteredProjects.value.slice(0, visibleProjectCount.value))
-const filteredArticles = computed(() => articles.value.filter((article) => !articleSearch.value || normalize(`${article.title} ${article.type}`).includes(normalize(articleSearch.value))))
+const filteredArticles = computed(() => articles.value.filter((article) => !articleSearch.value || normalize(`${article.title} ${article.type} ${articleTitle(article)}`).includes(normalize(articleSearch.value))))
 const visibleArticles = computed(() => filteredArticles.value.slice(0, visibleArticleCount.value))
 function openProject(project, event) {
   lastProjectTrigger.value = event?.currentTarget || document.activeElement
   galleryIndex.value = 0
-  window.location.hash = `/projects/${project.id}`
+  writeRoute(`/projects/${project.id}`)
 }
-function closeProject() { window.location.hash = '/projects' }
-function openArticle(article) { window.location.hash = `/articles/${article.id}` }
-function closeArticle() { window.location.hash = '/articles' }
+function closeProject() { writeRoute('/projects') }
+function openArticle(article) { writeRoute(`/articles/${article.id}`) }
+function closeArticle() { writeRoute('/articles') }
 function moveGallery(step) {
   const count = projectImages.value.length
   if (!count) return
@@ -225,7 +540,7 @@ function moveGallery(step) {
 function fallbackImage(event) {
   if (event?.currentTarget) event.currentTarget.hidden = true
 }
-function displayNumber(value) { return Number(value).toLocaleString('fa-IR') }
+function displayNumber(value) { return formatNumber(value, locale.value) }
 function projectStatus(status) {
   if (status === 'in-progress') return 'در حال اجرا'
   if (status === 'history') return 'سوابق تصویری'
@@ -240,12 +555,16 @@ function projectCategory(project) {
 }
 function projectTitle(project) {
   if (project.source === 'telegram-report') return `گزارش مستقل ${project.code}`
-  if (project.source === 'field-reports') return `پروژه کارگاهی ${project.code}`
-  return `پروژه ${project.code || `G-${project.id}`}`
+  if (project.source === 'field-reports' && !/^G-\d+$/iu.test(project.code || '')) return 'گزارش تصویریِ بدون کد پروژه'
+  if (project.source === 'field-reports') return `پروژه ${project.code}`
+  if (project.code) return `پروژه ${project.code}`
+  const use = project.usage ? `ٔ ${project.usage}` : ''
+  const area = project.address && project.address !== 'استان البرز' ? ` در ${project.address}` : ''
+  return `پروژه${use}${area}`
 }
 function projectDate(value) {
   if (!value) return '—'
-  return new Intl.DateTimeFormat('fa-IR', { dateStyle: 'long', timeZone: 'Asia/Tehran' }).format(new Date(value))
+  return new Intl.DateTimeFormat(numberLocale('fa'), { dateStyle: 'long', timeZone: 'Asia/Tehran' }).format(new Date(value))
 }
 function initials(name) { return name.split(' ').slice(0, 2).map((part) => part[0]).join('‌') }
 function handleKeydown(event) {
@@ -271,10 +590,8 @@ function saveFeedback(event) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(entry),
-  }).then(async (response) => {
+  }).then((response) => {
     if (!response.ok) throw new Error('local-api-unavailable')
-    const result = await fetch('/api/admin/feedback')
-    adminFeedback.value = result.ok ? await result.json() : adminFeedback.value
   }).catch(() => {
     const saved = JSON.parse(localStorage.getItem('arcpol-local-feedback') || '[]')
     saved.push(entry)
@@ -288,10 +605,12 @@ function saveFeedback(event) {
 }
 
 async function loadLocalAdmin() {
+  adminReady.value = false
   try {
     const statusResponse = await fetch('/api/admin/status', { cache: 'no-store' })
     if (!statusResponse.ok) return
     const status = await statusResponse.json()
+    adminStorage.value = status.storage === 'mariadb' ? 'mariadb' : 'json'
     const [overridesResponse, feedbackResponse, contactRequestsResponse] = await Promise.all([
       fetch('/api/admin/content', { cache: 'no-store' }),
       fetch('/api/admin/feedback', { cache: 'no-store' }),
@@ -317,6 +636,9 @@ async function loadLocalAdmin() {
   } catch {
     adminEnabled.value = false
     adminHasBackup.value = false
+    adminStorage.value = 'json'
+  } finally {
+    adminReady.value = true
   }
 }
 
@@ -391,34 +713,47 @@ watch(selectedProject, async (project, previousProject) => {
   else if (previousProject) lastProjectTrigger.value?.focus?.()
 })
 onMounted(() => {
+  syncRoute()
   window.addEventListener('hashchange', syncRoute)
+  window.addEventListener('popstate', syncRoute)
+  window.addEventListener('click', handleRouteClick)
   window.addEventListener('keydown', handleKeydown)
-  loadLocalAdmin()
 })
 onUnmounted(() => {
   window.removeEventListener('hashchange', syncRoute)
+  window.removeEventListener('popstate', syncRoute)
+  window.removeEventListener('click', handleRouteClick)
   window.removeEventListener('keydown', handleKeydown)
 })
 </script>
 
 <template>
   <div class="site-shell" id="top">
-    <a class="skip-link" href="#main">رفتن به محتوای اصلی</a>
+    <a class="skip-link" href="#main">{{ locale === 'en' ? 'Skip to main content' : 'رفتن به محتوای اصلی' }}</a>
     <SiteHeader
       :company="company"
       :logo-image="siteMedia.logoImage"
       :navigation="navigation"
       :current-page="currentPage"
       :menu-open="menuOpen"
+      :locale="locale"
+      @change-locale="changeLocale"
       @toggle-menu="menuOpen = !menuOpen"
       @close-menu="menuOpen = false"
     />
 
-    <main id="main">
+    <main id="main" :lang="locale === 'en' && englishPageReady ? 'en' : 'fa'" :dir="locale === 'en' && englishPageReady ? 'ltr' : 'rtl'">
+      <p v-if="locale === 'en' && !englishPageReady" class="language-fallback page-container" lang="en" dir="ltr" role="status">This page is currently available in Persian. English translation is in progress.</p>
+      <div v-if="adminRoute && projectArchiveError" class="archive-status page-container" role="alert">
+        <p>{{ locale === 'en' ? 'The project archive could not be loaded.' : 'بارگذاری آرشیو پروژه‌ها انجام نشد.' }}</p>
+        <button type="button" class="button button-outline" @click="loadProjectArchive">{{ locale === 'en' ? 'Try again' : 'تلاش دوباره' }}</button>
+      </div>
+      <p v-else-if="adminRoute && (!projectArchiveLoaded || !adminReady)" class="archive-status page-container" role="status">{{ locale === 'en' ? 'Loading the local content manager…' : 'در حال بارگذاری پنل مدیریت محلی…' }}</p>
       <AdminPage
-        v-if="adminRoute"
+        v-else-if="adminRoute"
         :enabled="adminEnabled"
         :has-backup="adminHasBackup"
+        :storage="adminStorage"
         :overrides="adminOverrides"
         :base-projects="baseProjects"
         :projects="allProjects"
@@ -441,11 +776,13 @@ onUnmounted(() => {
       />
       <HomePage
         v-else-if="currentPage === 'home'"
+        :locale="locale"
         :company="company"
         :hero-image="siteMedia.heroImage"
         :hero-image-alt="siteMedia.heroImageAlt"
         :hero-image-caption="siteMedia.heroImageCaption"
         :stats="homeStats"
+        :stats-note="homeStatsNote"
         :disciplines="disciplines"
         :service-groups="serviceGroups"
         :featured-projects="highlightedProjects"
@@ -454,8 +791,14 @@ onUnmounted(() => {
         :project-cover="projectCover"
         @open-project="openProject"
       />
+      <div v-else-if="currentPage === 'projects' && projectArchiveError" class="archive-status page-container" role="alert">
+        <p>{{ locale === 'en' ? 'The project archive could not be loaded.' : 'بارگذاری آرشیو پروژه‌ها انجام نشد.' }}</p>
+        <button type="button" class="button button-outline" @click="loadProjectArchive">{{ locale === 'en' ? 'Try again' : 'تلاش دوباره' }}</button>
+      </div>
+      <p v-else-if="currentPage === 'projects' && !projectArchiveLoaded" class="archive-status page-container" role="status">{{ locale === 'en' ? 'Loading project archive…' : 'در حال بارگذاری آرشیو پروژه‌ها…' }}</p>
       <ProjectsPage
         v-else-if="currentPage === 'projects'"
+        :locale="locale"
         :project="selectedProject"
         :projects="projects"
         :in-progress-count="inProgressCount"
@@ -492,6 +835,7 @@ onUnmounted(() => {
       />
       <ServicesPage
         v-else-if="currentPage === 'services'"
+        :locale="locale"
         :company="company"
         :service-groups="serviceGroups"
         :engagement-models="engagementModels"
@@ -501,9 +845,12 @@ onUnmounted(() => {
         :selected-service-name="serviceNameFromRoute"
         :projects="projects"
         :service-evidence="selectedServiceEvidence"
+        :service-evidence-loading="projectArchiveLoading"
+        :service-evidence-error="projectArchiveError"
       />
       <BuildingExplorer
         v-else-if="currentPage === 'building'"
+        :locale="locale"
         :initial-service="serviceNameFromRoute"
         :service-groups="serviceGroups"
         :additional-services="additionalServices"
@@ -511,6 +858,7 @@ onUnmounted(() => {
       />
       <AboutPage
         v-else-if="currentPage === 'about'"
+        :locale="locale"
         :company="company"
         :vision="vision"
         :mission="mission"
@@ -525,6 +873,7 @@ onUnmounted(() => {
       />
       <ArticlesPage
         v-else-if="currentPage === 'articles'"
+        :locale="locale"
         :articles="articles"
         :fallback-image="siteMedia.defaultArticleImage"
         :selected-article="selectedArticle"
@@ -538,16 +887,23 @@ onUnmounted(() => {
         @open-article="openArticle"
         @load-more="visibleArticleCount += 12"
       />
-      <ContactPage v-else-if="currentPage === 'contact'" :company="company" />
-      <PortalPage v-else-if="currentPage === 'portal'" />
+      <ContactPage v-else-if="currentPage === 'contact'" :company="company" :locale="locale" :selected-service-name="serviceNameFromRoute" />
+      <PortalPage v-else-if="currentPage === 'portal'" :locale="locale" />
       <FeedbackPage
-        v-else
+        v-else-if="currentPage === 'feedback'"
+        :locale="locale"
         v-model:rating="feedbackRating"
         :saved="feedbackSaved"
         @save-feedback="saveFeedback"
       />
+      <section v-else-if="currentPage === 'not-found'" class="page-container not-found-page" aria-labelledby="not-found-title">
+        <p class="eyebrow">{{ locale === 'en' ? '404 / NOT FOUND' : '۴۰۴ / صفحه پیدا نشد' }}</p>
+        <h1 id="not-found-title">{{ locale === 'en' ? 'This page is not here.' : 'این صفحه پیدا نشد.' }}</h1>
+        <p>{{ locale === 'en' ? 'The link may be out of date, or the page may have moved.' : 'ممکن است پیوند قدیمی باشد یا صفحه جابه‌جا شده باشد.' }}</p>
+        <a class="button button-dark" href="/">{{ locale === 'en' ? 'Return to home' : 'بازگشت به صفحهٔ اصلی' }}</a>
+      </section>
     </main>
 
-    <SiteFooter :company="company" :logo-image="siteMedia.logoImage" :watermark-image="siteMedia.footerWatermarkImage" />
+    <SiteFooter :company="company" :logo-image="siteMedia.logoImage" :watermark-image="siteMedia.footerWatermarkImage" :locale="locale" />
   </div>
 </template>

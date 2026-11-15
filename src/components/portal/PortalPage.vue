@@ -1,42 +1,46 @@
 <script setup>
 import PageIntro from '../patterns/PageIntro.vue'
+import { portalTextEn } from '../../i18n/other-pages-en.js'
+import { localizeDigits } from '../../i18n/numbers.js'
 
+const props = defineProps({ locale: { type: String, default: 'fa' } })
 const stages = [
   { number: '01', title: 'اطلاعات پروژه', caption: 'نمونه', state: 'sample' },
   { number: '02', title: 'مدارک مهندسی', caption: 'نمونه', state: 'sample' },
   { number: '03', title: 'گزارش‌های کارگاهی', caption: 'نمونه', state: 'sample' },
   { number: '04', title: 'مدارک تحویل', caption: 'نمونه', state: 'sample' },
 ]
+const isEnglish = () => props.locale === 'en'
 </script>
 
 <template>
-  <div class="portal-page">
+  <div class="portal-page" :lang="isEnglish() ? 'en' : 'fa'" :dir="isEnglish() ? 'ltr' : 'rtl'">
     <PageIntro title-id="portal-page-title">
-      <template #eyebrow>پنل مشتریان <span class="en-label" dir="ltr">/ CLIENT PORTAL</span></template>
-      <template #title>پروژه،<br><em>در یک نگاه.</em></template>
-      <template #description>پیش‌نمایشی از فضای پیگیری مدارک و گزارش‌های پروژه.</template>
-      <template #meta>نمونهٔ نمایشی · بدون ورود و بدون اطلاعات واقعی</template>
+      <template #eyebrow>{{ isEnglish() ? portalTextEn.eyebrow : 'پنل مشتریان' }} <span class="en-label" dir="ltr">/ CLIENT PORTAL</span></template>
+      <template #title><template v-if="isEnglish()">Your project,<br><em>at a glance.</em></template><template v-else>پروژه،<br><em>در یک نگاه.</em></template></template>
+      <template #description>{{ isEnglish() ? portalTextEn.description : 'پیش‌نمایشی از فضای پیگیری مدارک و گزارش‌های پروژه.' }}</template>
+      <template #meta>{{ isEnglish() ? portalTextEn.demo : 'نمونهٔ نمایشی · بدون ورود و بدون اطلاعات واقعی' }}</template>
     </PageIntro>
 
     <section class="page-container portal-sample-section" aria-labelledby="portal-sample-title">
-      <div class="portal-demo-banner"><span aria-hidden="true">i</span><p><strong>نسخهٔ نمایشی</strong> اطلاعات، وضعیت‌ها و مدارک این صفحه ساختگی و فقط برای نمایش شکل پنل هستند.</p></div>
+      <div class="portal-demo-banner"><span aria-hidden="true">i</span><p><strong>{{ isEnglish() ? portalTextEn.bannerTitle : 'نسخهٔ نمایشی' }}</strong> {{ isEnglish() ? portalTextEn.banner : 'اطلاعات، وضعیت‌ها و مدارک این صفحه ساختگی و فقط برای نمایش شکل پنل هستند.' }}</p></div>
       <div class="portal-sample-card">
         <div class="portal-sample-overview">
-          <div class="portal-card-kicker"><span>نمونهٔ پروژه</span><small dir="ltr">DEMO / 001</small></div>
-          <h2 id="portal-sample-title">پروژهٔ نمونهٔ ساختمانی</h2>
-          <p>نمایی آزمایشی از مسیر همکاری و دسترسی به اطلاعات پروژه.</p>
-          <div class="portal-sample-tags"><span>مسکونی</span><span>معماری · سازه · مکانیک · برق</span><span>گزارش تصویری</span></div>
-          <a class="button button-outline" href="#/services">مرور خدمات <span aria-hidden="true">↗</span></a>
+          <div class="portal-card-kicker"><span>{{ isEnglish() ? portalTextEn.project : 'نمونهٔ پروژه' }}</span><small dir="ltr">{{ localizeDigits('DEMO / 001', locale) }}</small></div>
+          <h2 id="portal-sample-title">{{ isEnglish() ? portalTextEn.projectTitle : 'پروژهٔ نمونهٔ ساختمانی' }}</h2>
+          <p>{{ isEnglish() ? portalTextEn.projectDescription : 'نمایی آزمایشی از مسیر همکاری و دسترسی به اطلاعات پروژه.' }}</p>
+          <div class="portal-sample-tags"><span>{{ isEnglish() ? portalTextEn.residential : 'مسکونی' }}</span><span>{{ isEnglish() ? portalTextEn.disciplines : 'معماری · سازه · مکانیک · برق' }}</span><span>{{ isEnglish() ? portalTextEn.photoReports : 'گزارش تصویری' }}</span></div>
+          <a class="button button-outline" :href="isEnglish() ? '/services?lang=en' : '/services'">{{ isEnglish() ? portalTextEn.services : 'مرور خدمات' }} <span aria-hidden="true">↗</span></a>
         </div>
-        <div class="portal-journey" aria-label="مراحل نمونهٔ پروژه">
+        <div class="portal-journey" :aria-label="isEnglish() ? portalTextEn.journey : 'مراحل نمونهٔ پروژه'">
           <div v-for="stage in stages" :key="stage.number" class="portal-stage" :class="`portal-stage-${stage.state}`">
-            <span class="portal-stage-number" dir="ltr">{{ stage.number }}</span>
-            <div><strong>{{ stage.title }}</strong><small>محتوای آزمایشی</small></div>
-            <span class="portal-stage-badge">{{ stage.caption }}</span>
+            <span class="portal-stage-number" dir="ltr">{{ localizeDigits(stage.number, locale) }}</span>
+            <div><strong>{{ localizeDigits(isEnglish() ? portalTextEn.stages[Number(stage.number) - 1] : stage.title, locale) }}</strong><small>{{ localizeDigits(isEnglish() ? portalTextEn.sampleContent : 'محتوای آزمایشی', locale) }}</small></div>
+            <span class="portal-stage-badge">{{ isEnglish() ? 'Sample' : stage.caption }}</span>
           </div>
         </div>
       </div>
-      <div class="portal-demo-foot"><span>این نمونه به هیچ پروژه یا مشتری واقعی متصل نیست.</span><a href="#/contact">گفت‌وگو دربارهٔ همکاری <span aria-hidden="true">←</span></a></div>
+      <div class="portal-demo-foot"><span>{{ isEnglish() ? portalTextEn.noRealData : 'این نمونه به هیچ پروژه یا مشتری واقعی متصل نیست.' }}</span><a :href="isEnglish() ? '/contact?lang=en' : '/contact'">{{ isEnglish() ? portalTextEn.contact : 'گفت‌وگو دربارهٔ همکاری' }} <span aria-hidden="true">←</span></a></div>
     </section>
   </div>
 </template>

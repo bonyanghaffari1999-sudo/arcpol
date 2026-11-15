@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue'
+defineProps({ locale: { type: String, default: 'fa' } })
 
 const state = ref('idle')
 
@@ -23,31 +24,31 @@ async function submitRequest(event) {
 </script>
 
 <template>
-  <section class="home-callback page-container" aria-label="درخواست تماس اختیاری">
+  <section class="home-callback page-container" :aria-label="locale === 'en' ? 'Optional callback request' : 'درخواست تماس اختیاری'">
     <details class="callback-details">
       <summary>
         <span class="callback-summary-icon" aria-hidden="true">↗</span>
-        <span class="callback-summary-copy"><strong>درخواست تماس</strong><small>اگر مایلید، شماره‌تان را بگذارید تا برای گفت‌وگو دربارهٔ پروژه با شما تماس بگیریم.</small></span>
+        <span class="callback-summary-copy"><strong>{{ locale === 'en' ? 'Request a callback' : 'درخواست تماس' }}</strong><small>{{ locale === 'en' ? 'Leave your number if you would like to discuss your project.' : 'اگر مایلید، شماره‌تان را بگذارید تا برای گفت‌وگو دربارهٔ پروژه با شما تماس بگیریم.' }}</small></span>
         <span class="callback-summary-toggle" aria-hidden="true">＋</span>
       </summary>
       <form class="callback-form" @submit.prevent="submitRequest">
         <div class="callback-fields">
-          <label>شمارهٔ تماس <span aria-hidden="true">*</span><input name="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="32" placeholder="مثلاً ۰۹۱۲…" required></label>
-          <label>نام <small>اختیاری</small><input name="name" autocomplete="name" maxlength="80" placeholder="نام شما"></label>
-          <label>موضوع گفت‌وگو <small>اختیاری</small>
+          <label>{{ locale === 'en' ? 'Phone number' : 'شمارهٔ تماس' }} <span aria-hidden="true">*</span><input name="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="32" :placeholder="locale === 'en' ? 'Phone number' : 'مثلاً ۰۹۱۲…'" required></label>
+          <label>{{ locale === 'en' ? 'Name' : 'نام' }} <small>{{ locale === 'en' ? 'Optional' : 'اختیاری' }}</small><input name="name" autocomplete="name" maxlength="80" :placeholder="locale === 'en' ? 'Your name' : 'نام شما'"></label>
+          <label>{{ locale === 'en' ? 'Topic' : 'موضوع گفت‌وگو' }} <small>{{ locale === 'en' ? 'Optional' : 'اختیاری' }}</small>
             <select name="service">
-              <option value="">انتخاب نشده</option>
-              <option>طراحی و تهیهٔ نقشه</option><option>نظارت</option><option>اجرا و ساخت</option><option>آزمایش و ژئوتکنیک</option><option>سایر خدمات</option>
+              <option value="">{{ locale === 'en' ? 'Not selected' : 'انتخاب نشده' }}</option>
+              <option value="طراحی و تهیهٔ نقشه">{{ locale === 'en' ? 'Design and drawings' : 'طراحی و تهیهٔ نقشه' }}</option><option value="نظارت">{{ locale === 'en' ? 'Supervision' : 'نظارت' }}</option><option value="اجرا و ساخت">{{ locale === 'en' ? 'Construction' : 'اجرا و ساخت' }}</option><option value="آزمایش و ژئوتکنیک">{{ locale === 'en' ? 'Testing and geotechnics' : 'آزمایش و ژئوتکنیک' }}</option><option value="سایر خدمات">{{ locale === 'en' ? 'Other services' : 'سایر خدمات' }}</option>
             </select>
           </label>
-          <label class="callback-note">توضیح کوتاه <small>اختیاری</small><input name="details" maxlength="500" placeholder="زمان مناسب یا شرح کوتاه درخواست"></label>
+          <label class="callback-note">{{ locale === 'en' ? 'Short note' : 'توضیح کوتاه' }} <small>{{ locale === 'en' ? 'Optional' : 'اختیاری' }}</small><input name="details" maxlength="500" :placeholder="locale === 'en' ? 'Preferred time or a short note' : 'زمان مناسب یا شرح کوتاه درخواست'"></label>
         </div>
         <div class="callback-submit-row">
-          <button class="button button-dark" type="submit" :disabled="state === 'sending'">{{ state === 'sending' ? 'در حال ثبت…' : 'ثبت درخواست' }} <span aria-hidden="true">↗</span></button>
-          <p>برای حفظ حریم خصوصی، این نسخه فقط روی همین رایانه ذخیره می‌کند؛ درخواست به اینترنت یا شرکت ارسال نمی‌شود.</p>
+          <button class="button button-dark" type="submit" :disabled="state === 'sending'">{{ locale === 'en' ? (state === 'sending' ? 'Saving…' : 'Save request') : (state === 'sending' ? 'در حال ثبت…' : 'ثبت درخواست') }} <span aria-hidden="true">↗</span></button>
+          <p>{{ locale === 'en' ? 'This local version saves the request only on this computer; it is not sent to the company or over the internet.' : 'برای حفظ حریم خصوصی، این نسخه فقط روی همین رایانه ذخیره می‌کند؛ درخواست به اینترنت یا شرکت ارسال نمی‌شود.' }}</p>
         </div>
-        <p v-if="state === 'saved'" class="callback-message is-success" role="status">درخواست روی همین رایانه ثبت شد. تماس یا ارسال خودکار انجام نشده است.</p>
-        <p v-else-if="state === 'unavailable'" class="callback-message" role="alert">ثبت محلی در دسترس نیست؛ درخواست در این صفحه نگهداری نشد.</p>
+        <p v-if="state === 'saved'" class="callback-message is-success" role="status">{{ locale === 'en' ? 'Saved on this computer. No automatic call or transmission has been made.' : 'درخواست روی همین رایانه ثبت شد. تماس یا ارسال خودکار انجام نشده است.' }}</p>
+        <p v-else-if="state === 'unavailable'" class="callback-message" role="alert">{{ locale === 'en' ? 'Local storage is unavailable; this request was not saved.' : 'ثبت محلی در دسترس نیست؛ درخواست در این صفحه نگهداری نشد.' }}</p>
       </form>
     </details>
   </section>

@@ -1,5 +1,6 @@
 node_modules/
 dist/
+/.codex-review-build/
 .tools/
 .local-server*.log
 .local-server.pid
@@ -13,6 +14,7 @@ tmp/
 /گزارش_بازدید_و_ایرادات_ساختمان_گروه_غفاری.docx
 /src/admin-overrides.json.bak
 **/.DS_Store
+!.env.mariadb.example
 
 # Site photographs stay on the local computer.
 *.jpg

@@ -49,11 +49,16 @@ export const serviceDescriptions = {
   'پنل خورشیدی': 'بررسی و هماهنگی راهکارهای پنل خورشیدی متناسب با پروژه.',
 }
 
-// These keywords only select report images whose original timeline text mentions the subject.
-// The source event text itself is never shown in the public service page.
+// These verified aliases select report images only when the original event text names the subject.
+// A few legacy project records are matched separately using their recorded service type below.
+// Raw source event text is never shown in the public service page.
 export const serviceEvidenceKeywords = {
+  'محاسبات و طراحی سازه': ['طراحی سازه', 'نقشه سازه'],
+  'تهیهٔ نقشه‌های اجرایی چهار رشته': ['نقشه اجرایی', 'نقشه های اجرایی'],
   'مطالعات و آزمایش مکانیک خاک': ['آزمایش مکانیک خاک', 'آزمایشگاه مکانیک خاک', 'آزمایش خاک'],
-  'نمونه‌گیری و کنترل بتن': ['آزمایش بتن', 'نمونه بتن', 'کنترل بتن'],
+  'آزمایش مصالح ساختمانی': ['تست مقاومت بتن', 'چکش اشمیت'],
+  'نمونه‌گیری و کنترل بتن': ['آزمایش بتن', 'نمونه بتن', 'کنترل بتن', 'تست مقاومت بتن', 'چکش اشمیت'],
+  'آزمایش‌های کارگاهی': ['تست مقاومت بتن', 'چکش اشمیت'],
   'کنترل و بازرسی جوش': ['بازرسی جوش', 'کنترل جوش'],
   'گودبرداری': ['گودبرداری', 'گود برداری'],
   'پایدارسازی گودهای عمیق': ['پایدارسازی گود', 'سازه نگهبان', 'نیلینگ'],
@@ -61,6 +66,9 @@ export const serviceEvidenceKeywords = {
   'سازه‌های نگهبان': ['سازه نگهبان', 'نیلینگ', 'انکراژ'],
   'اجرای سازه‌های هوایی و اسکلت بتنی و فلزی': ['اسکلت', 'سازه هوایی'],
   'فورجینگ سر‌به‌سر میلگرد': ['فورجینگ'],
+  'اجرای تأسیسات مکانیکی و برقی': ['تاسیسات مکانیکی و برقی', 'تأسیسات مکانیکی و برقی', 'اجرای تاسیسات', 'اجرای تأسیسات'],
+  'خدمات مجریان گاز': ['لوله کشی گاز', 'لوله‌کشی گاز'],
+  'خدمات آسانسور': ['آسانسور'],
   'خاک‌برداری و آماده‌سازی کارگاه': ['گودبرداری', 'گود برداری'],
   'بازدید و گزارش کارگاهی': ['بازدید اجرایی', 'بازدید کارگاهی'],
   'نقشه‌برداری': ['نقشه بردار', 'نقشه‌بردار'],
@@ -82,12 +90,37 @@ export function describeService(service) {
 
 export function findServiceEvidence(service, projects) {
   const keywords = serviceEvidenceKeywords[service] || []
-  if (!keywords.length) return []
+  const normalizedServiceWork = 'نظارت و اجرا'
+  const generalSupervisionServices = new Set(['نظارت عالیه', 'نظارت مقیم و کارگاهی'])
   const normalize = (value) => String(value ?? '').toLocaleLowerCase('fa-IR')
     .replaceAll('ي', 'ی').replaceAll('ك', 'ک').replaceAll('‌', ' ').replace(/\s+/g, ' ').trim()
   const searchTerms = keywords.map(normalize)
   const matches = []
   for (const project of projects) {
+    const legacyService = normalize(project.type)
+    const legacyExecutionMatch = service === 'اجرای کامل یا بخشی از ساختمان'
+      && legacyService === normalize(normalizedServiceWork)
+    const legacySupervisionMatch = generalSupervisionServices.has(service)
+      && legacyService === normalize('نظارت')
+    if (!project.source && (legacyExecutionMatch || legacySupervisionMatch)) {
+      const image = (project.images || []).find(Boolean)
+      if (image) {
+        matches.push({
+          image,
+          projectId: project.id,
+          code: `previous-site:${project.id}`,
+          usage: project.usage || 'ساختمانی',
+          date: project.updatedAt || null,
+          keyword: legacyService,
+          summary: '',
+          recordedService: project.type,
+          supervisionSpecificityUnspecified: legacySupervisionMatch,
+          sourceKind: 'previous-site',
+        })
+      }
+      continue
+    }
+    if (!keywords.length) continue
     if (!['field-reports', 'telegram-report'].includes(project.source)) continue
     for (const entry of project.timeline || []) {
       if (!entry.image) continue
@@ -96,16 +129,23 @@ export function findServiceEvidence(service, projects) {
       if (!keyword) continue
       matches.push({
         image: entry.image,
-        code: project.code || `G-${project.id}`,
+        projectId: project.id,
+        code: project.code || `${project.source}:${project.id}`,
         usage: project.usage || 'ساختمانی',
         date: entry.date || project.updatedAt,
         keyword: keywords[searchTerms.indexOf(keyword)],
         summary: safeEventTitle(entry.title),
+        sourceKind: project.source,
       })
     }
   }
-  matches.sort((a, b) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0)
-    || a.code.localeCompare(b.code, 'fa'))
+  matches.sort((a, b) => {
+    if (a.sourceKind === 'previous-site' && b.sourceKind === 'previous-site') {
+      return Number(b.projectId) - Number(a.projectId)
+    }
+    return (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0)
+      || a.code.localeCompare(b.code, 'fa')
+  })
   const seenReports = new Set()
   const seenImages = new Set()
   return matches.filter((entry) => {

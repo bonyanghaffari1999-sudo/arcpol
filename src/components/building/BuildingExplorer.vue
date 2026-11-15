@@ -7,9 +7,26 @@ import { constructionOrder, progressAtLine } from './building-timeline.js'
 import { useBuildingServices } from './use-building-services.js'
 import { normalizeServiceText, serviceDetailHref } from './building-service-map.js'
 import { describeService } from '../../service-details.js'
+import { serviceDescriptionsEn, serviceGroupsEn, serviceNamesEn } from '../../i18n/services-en.js'
+import { buildingChapterEn, buildingUiEn } from '../../i18n/building-en.js'
+import { formatNumber, localizeDigits, numberLocale } from '../../i18n/numbers.js'
 
-const props = defineProps({ serviceGroups: { type: Array, required: true }, additionalServices: { type: Array, required: true }, projects: { type: Array, default: () => [] }, initialService: { type: String, default: '' } })
-const chapters = computed(() => constructionOrder.map((id) => ({ ...[...buildingSystems, wholeProjectChapter].find((chapter) => chapter.id === id), ...constructionCopy[id] })))
+const props = defineProps({ serviceGroups: { type: Array, required: true }, additionalServices: { type: Array, required: true }, projects: { type: Array, default: () => [] }, initialService: { type: String, default: '' }, locale: { type: String, default: 'fa' } })
+const isEnglish = computed(() => props.locale === 'en')
+const localize = (value) => localizeDigits(value, props.locale)
+const chapters = computed(() => constructionOrder.map((id) => {
+  const chapter = { ...[...buildingSystems, wholeProjectChapter].find((item) => item.id === id), ...constructionCopy[id] }
+  const localizedChapter = isEnglish.value ? { ...chapter, ...(buildingChapterEn[id] || {}) } : chapter
+  return {
+    ...localizedChapter,
+    label: localize(localizedChapter.label),
+    shortLabel: localize(localizedChapter.shortLabel),
+    title: localize(localizedChapter.title),
+    description: localize(localizedChapter.description),
+    note: localize(localizedChapter.note),
+    elements: (localizedChapter.elements || []).map(localize),
+  }
+}))
 const { serviceCatalog, serviceEntriesByChapter, branchesByChapter, samplesByChapter } = useBuildingServices(props, chapters)
 const serviceFinder = ref(null)
 const serviceCount = computed(() => serviceCatalog.value.filter((service) => !service.supplemental).length)
@@ -56,7 +73,14 @@ function goToStage(index) {
   if (element) window.scrollTo({ top: window.scrollY + anchor(element) - focusLine() + 2, behavior: reducedMotion.value ? 'instant' : 'smooth' })
 }
 function handleMotionChange(event) { reducedMotion.value = event.matches; updateScroll() }
-const serviceHref = serviceDetailHref
+const serviceHref = (service) => {
+  const href = serviceDetailHref(service)
+  return isEnglish.value ? `${href}${href.includes('?') ? '&' : '?'}lang=en` : href
+}
+const serviceLabel = (service) => localize(isEnglish.value ? serviceNamesEn[service.name] || service.name : service.name)
+const serviceLanguage = (service) => isEnglish.value && serviceNamesEn[service.name] ? 'en' : 'fa'
+const serviceCategoryLabel = (service) => localize(isEnglish.value ? serviceGroupsEn[service.categoryId]?.title || service.categoryTitle : service.categoryTitle)
+const serviceDescription = (service) => localize(isEnglish.value ? serviceDescriptionsEn[service.name] || 'See the service catalogue for its scope and project-specific details.' : describeService(service.name))
 async function showStageServices(index, keepService = false) {
   if (!keepService) selectedServiceName.value = ''
   selectedChapterId.value = constructionOrder[index - 1]
@@ -81,7 +105,7 @@ function selectServiceFromRoute() {
 watch(() => props.initialService, selectServiceFromRoute)
 function formatDate(value) {
   const parsed = Date.parse(value)
-  return Number.isFinite(parsed) ? new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium', timeZone: 'Asia/Tehran' }).format(new Date(parsed)) : ''
+  return Number.isFinite(parsed) ? new Intl.DateTimeFormat(isEnglish.value ? 'en-GB-u-nu-latn' : numberLocale(props.locale), { dateStyle: 'medium', timeZone: 'Asia/Tehran' }).format(new Date(parsed)) : ''
 }
 onMounted(() => {
   motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -106,60 +130,60 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="building-explorer-page" :style="{ '--building-sticky-top': `${stickyTop}px` }">
+  <div class="building-explorer-page" :lang="isEnglish ? 'en' : 'fa'" :dir="isEnglish ? 'ltr' : 'rtl'" :style="{ '--building-sticky-top': `${stickyTop}px` }">
     <header class="building-intro page-container">
-      <div><span class="building-eyebrow">ساختمان تعاملی</span><h1>از زمین، تا یک ساختمان کامل.</h1></div>
-      <div class="building-intro-description"><p>پایین بروید تا ساختمان ساخته شود، یا از میان {{ serviceCount.toLocaleString('fa-IR') }} خدمت انتخاب کنید و جای آن را روی ساختمان ببینید.</p><button type="button" class="building-text-button" @click="goToStage(8)">دیدن ساختمان کامل <span aria-hidden="true">↙</span></button></div>
+      <div><span class="building-eyebrow">{{ isEnglish ? buildingUiEn.eyebrow : 'ساختمان تعاملی' }}</span><h1>{{ isEnglish ? buildingUiEn.title : 'از زمین، تا یک ساختمان کامل.' }}</h1></div>
+      <div class="building-intro-description"><p>{{ isEnglish ? buildingUiEn.intro.replace('{count}', formatNumber(serviceCount, locale)) : `پایین بروید تا ساختمان ساخته شود، یا از میان ${formatNumber(serviceCount, locale)} خدمت انتخاب کنید و جای آن را روی ساختمان ببینید.` }}</p><button type="button" class="building-text-button" @click="goToStage(8)">{{ isEnglish ? buildingUiEn.complete : 'دیدن ساختمان کامل' }} <span aria-hidden="true">↙</span></button></div>
     </header>
-    <section ref="storyElement" class="building-story page-container" aria-label="ساخت مرحله‌به‌مرحلهٔ ساختمان با اسکرول">
-      <aside ref="visualElement" class="building-visual-column" aria-label="نمای سه‌بعدی و مراحل ساخت">
-        <button type="button" class="building-service-launcher" aria-haspopup="dialog" @click="serviceFinder.open()"><span>خدمات روی ساختمان</span><span>{{ serviceCount.toLocaleString('fa-IR') }} خدمت <span aria-hidden="true">⌕</span></span></button>
-        <BuildingScene :progress="progress" :reduced-motion="reducedMotion" :label="currentChapter?.label || 'زمین؛ نقطهٔ شروع'" :highlighted-stages="highlightedStages" @select-stage="showStageServices" />
+    <section ref="storyElement" class="building-story page-container" :aria-label="isEnglish ? 'Construction stages shown as you scroll' : 'ساخت مرحله‌به‌مرحلهٔ ساختمان با اسکرول'">
+      <aside ref="visualElement" class="building-visual-column" :aria-label="isEnglish ? '3D building model and construction stages' : 'نمای سه‌بعدی و مراحل ساخت'">
+        <button type="button" class="building-service-launcher" aria-haspopup="dialog" @click="serviceFinder.open()"><span>{{ isEnglish ? buildingUiEn.serviceLauncher : 'خدمات روی ساختمان' }}</span><span>{{ formatNumber(serviceCount, locale) }} {{ isEnglish ? 'services' : 'خدمت' }} <span aria-hidden="true">⌕</span></span></button>
+        <BuildingScene :progress="progress" :reduced-motion="reducedMotion" :locale="locale" :label="currentChapter?.label || (isEnglish ? 'Starting site' : 'زمین؛ نقطهٔ شروع')" :highlighted-stages="highlightedStages" @select-stage="showStageServices" />
         <div class="building-timeline">
-          <div class="building-progress-copy"><span>{{ percentage === 100 ? 'ساختمان کامل شد' : 'پیشرفت ساخت مدل' }}</span><strong>{{ percentage.toLocaleString('fa-IR') }}<span>٪</span></strong></div>
-          <div class="building-progress-track" role="progressbar" :aria-valuenow="percentage" aria-valuemin="0" aria-valuemax="100" aria-label="پیشرفت ساخت مدل مفهومی"><span :style="{ transform: `scaleX(${percentage / 100})` }"></span></div>
-          <nav class="building-stage-navigation" aria-label="انتخاب مستقیم مرحلهٔ ساخت">
-            <button v-for="(chapter, index) in chapters" :key="chapter.id" type="button" :class="{ 'is-complete': progress >= index + 1, 'is-service-related': selectedService?.chapterIds.includes(chapter.id) || selectedService?.projectWide }" :aria-current="activeStep === index + 1 ? 'step' : undefined" :aria-label="`مرحلهٔ ${(index + 1).toLocaleString('fa-IR')}: ${chapter.label}`" :title="chapter.label" @click="goToStage(index + 1)"><span class="building-stage-number">{{ (index + 1).toLocaleString('fa-IR') }}</span><span class="building-stage-short">{{ chapter.shortLabel }}</span></button>
+          <div class="building-progress-copy"><span>{{ percentage === 100 ? (isEnglish ? buildingUiEn.modelComplete : 'ساختمان کامل شد') : (isEnglish ? buildingUiEn.modelProgress : 'پیشرفت ساخت مدل') }}</span><strong>{{ formatNumber(percentage, locale) }}<span>{{ isEnglish ? '%' : '٪' }}</span></strong></div>
+          <div class="building-progress-track" role="progressbar" :aria-valuenow="percentage" aria-valuemin="0" aria-valuemax="100" :aria-label="isEnglish ? buildingUiEn.progressLabel : 'پیشرفت ساخت مدل مفهومی'"><span :style="{ transform: `scaleX(${percentage / 100})`, transformOrigin: isEnglish ? 'left' : 'right' }"></span></div>
+          <nav class="building-stage-navigation" :aria-label="isEnglish ? buildingUiEn.directStage : 'انتخاب مستقیم مرحلهٔ ساخت'">
+            <button v-for="(chapter, index) in chapters" :key="chapter.id" type="button" :class="{ 'is-complete': progress >= index + 1, 'is-service-related': selectedService?.chapterIds.includes(chapter.id) || selectedService?.projectWide }" :aria-current="activeStep === index + 1 ? 'step' : undefined" :aria-label="`${isEnglish ? 'Stage' : 'مرحلهٔ'} ${formatNumber(index + 1, locale)}: ${chapter.label}`" :title="chapter.label" @click="goToStage(index + 1)"><span class="building-stage-number">{{ formatNumber(index + 1, locale) }}</span><span class="building-stage-short">{{ chapter.shortLabel }}</span></button>
           </nav>
         </div>
       </aside>
       <div class="building-chapters">
         <section :ref="(el) => chapterElements[0] = el" class="building-chapter building-chapter--start" aria-labelledby="building-start-title">
-          <span class="building-chapter-number" aria-hidden="true">۰۰</span><h2 id="building-start-title">همه‌چیز از زمین<br>شروع می‌شود.</h2>
-          <p>فعلاً فقط زمین را می‌بینید. کمی پایین‌تر بروید؛ پی در جای خود شکل می‌گیرد و ساختمان، مرحله‌به‌مرحله قد می‌کشد.</p>
-          <div class="building-start-facts"><span>۵ طبقه</span><span>۸ مرحله</span><span>دید ۳۶۰ درجه</span></div>
-          <button type="button" class="building-start-action" @click="goToStage(1)"><span>شروع ساخت</span><span aria-hidden="true">↓</span></button>
-          <p class="building-order-note">روایت ساده‌شدهٔ ساخت برای آشنایی با اجزای ساختمان</p>
+          <span class="building-chapter-number" aria-hidden="true">{{ localize('00') }}</span><h2 id="building-start-title" style="white-space: pre-line">{{ localize(isEnglish ? buildingUiEn.startTitle : 'همه‌چیز از زمین\nشروع می‌شود.') }}</h2>
+          <p>{{ localize(isEnglish ? buildingUiEn.startDescription : 'فعلاً فقط زمین را می‌بینید. کمی پایین‌تر بروید؛ پی در جای خود شکل می‌گیرد و ساختمان، مرحله‌به‌مرحله قد می‌کشد.') }}</p>
+          <div class="building-start-facts"><span v-for="fact in (isEnglish ? buildingUiEn.facts : ['۵ طبقه', '۸ مرحله', 'دید ۳۶۰ درجه'])" :key="fact">{{ localize(fact) }}</span></div>
+          <button type="button" class="building-start-action" @click="goToStage(1)"><span>{{ isEnglish ? buildingUiEn.start : 'شروع ساخت' }}</span><span aria-hidden="true">↓</span></button>
+          <p class="building-order-note">{{ isEnglish ? buildingUiEn.simplified : 'روایت ساده‌شدهٔ ساخت برای آشنایی با اجزای ساختمان' }}</p>
         </section>
         <article v-for="(chapter, index) in chapters" :key="chapter.id" :ref="(el) => chapterElements[index + 1] = el" class="building-chapter" :class="{ 'is-current': activeStep === index + 1, 'building-chapter--delivery': chapter.id === 'delivery' }" :aria-labelledby="`building-chapter-title-${chapter.id}`" :data-stage="index + 1">
-          <div class="building-chapter-topline"><span class="building-chapter-number">{{ (index + 1).toLocaleString('fa-IR', { minimumIntegerDigits: 2 }) }}</span><span>{{ chapter.label }}</span></div>
+          <div class="building-chapter-topline"><span class="building-chapter-number">{{ localize(String(index + 1).padStart(2, '0')) }}</span><span>{{ chapter.label }}</span></div>
           <h2 :id="`building-chapter-title-${chapter.id}`" tabindex="-1">{{ chapter.title }}</h2><p>{{ chapter.description }}</p>
-          <section v-if="selectedService && selectedChapterId === chapter.id" class="building-selected-service" aria-label="ارتباط خدمت انتخاب‌شده با ساختمان">
-            <div class="building-selected-heading"><span>{{ selectedService.categoryTitle }}</span><button type="button" aria-label="پاک‌کردن خدمت انتخاب‌شده" @click="selectedServiceName = ''; selectedChapterId = ''">×</button></div>
-            <h3>{{ selectedService.name }}</h3><p>{{ describeService(selectedService.name) }}</p>
-            <p v-if="selectedService.projectWide" class="building-service-scope">این خدمت به کل پروژه مربوط است و می‌تواند در چند مرحله همراه پروژه باشد؛ به محوطه یا پایان ساخت محدود نیست.</p>
-            <p v-else class="building-service-scope">بخش‌های مرتبط در مدل مشخص شده‌اند. برای دیدن هر بخش، آن را انتخاب کنید.</p>
-            <div v-if="!selectedService.projectWide" class="building-related-stages"><button v-for="related in selectedChapters" :key="related.id" type="button" :aria-pressed="selectedChapterId === related.id" @click="selectService(selectedService, related.id)">{{ related.id === 'delivery' ? 'کل پروژه و مدارک' : related.label }}</button></div>
-            <a :href="serviceHref(selectedService)">جزئیات {{ selectedService.name }} <span aria-hidden="true">↗</span></a>
+          <section v-if="selectedService && selectedChapterId === chapter.id" class="building-selected-service" :aria-label="isEnglish ? buildingUiEn.selectedRelation : 'ارتباط خدمت انتخاب‌شده با ساختمان'">
+            <div class="building-selected-heading"><span>{{ serviceCategoryLabel(selectedService) }}</span><button type="button" :aria-label="isEnglish ? buildingUiEn.clearSelection : 'پاک‌کردن خدمت انتخاب‌شده'" @click="selectedServiceName = ''; selectedChapterId = ''">×</button></div>
+            <h3 :lang="serviceLanguage(selectedService)" dir="auto">{{ serviceLabel(selectedService) }}</h3><p>{{ serviceDescription(selectedService) }}</p>
+            <p v-if="selectedService.projectWide" class="building-service-scope">{{ isEnglish ? buildingUiEn.projectWide : 'این خدمت به کل پروژه مربوط است و می‌تواند در چند مرحله همراه پروژه باشد؛ به محوطه یا پایان ساخت محدود نیست.' }}</p>
+            <p v-else class="building-service-scope">{{ isEnglish ? buildingUiEn.selectedPart : 'بخش‌های مرتبط در مدل مشخص شده‌اند. برای دیدن هر بخش، آن را انتخاب کنید.' }}</p>
+            <div v-if="!selectedService.projectWide" class="building-related-stages"><button v-for="related in selectedChapters" :key="related.id" type="button" :aria-pressed="selectedChapterId === related.id" @click="selectService(selectedService, related.id)">{{ localize(related.id === 'delivery' ? (isEnglish ? buildingUiEn.wholeProjectDocs : 'کل پروژه و مدارک') : related.label) }}</button></div>
+            <a :href="serviceHref(selectedService)">{{ isEnglish ? buildingUiEn.details : 'جزئیات' }} {{ serviceLabel(selectedService) }} <span aria-hidden="true">↗</span></a>
           </section>
-          <ul class="building-assembly-list" aria-label="اجزایی که در این مرحله ساخته می‌شوند"><li v-for="item in chapter.elements" :key="item"><span aria-hidden="true"></span>{{ item }}</li></ul>
+          <ul class="building-assembly-list" :aria-label="isEnglish ? buildingUiEn.components : 'اجزایی که در این مرحله ساخته می‌شوند'"><li v-for="item in chapter.elements" :key="item"><span aria-hidden="true"></span>{{ item }}</li></ul>
           <details v-if="branchesByChapter[chapter.id]?.length" class="building-services" open @toggle="updateScroll">
-            <summary><span>{{ chapter.id === 'delivery' ? 'خدمات کل پروژه و همراهی کارفرما' : 'خدمات این بخش ساختمان' }}</span><span>{{ (serviceEntriesByChapter[chapter.id] || []).length.toLocaleString('fa-IR') }} <span aria-hidden="true">＋</span></span></summary>
-            <p v-if="chapter.id === 'delivery'" class="building-project-services-note">نظارت، مدیریت، مشاوره و همکاری کلان می‌توانند در سراسر مسیر پروژه جریان داشته باشند.</p>
-            <div class="building-service-tree"><div v-for="branch in branchesByChapter[chapter.id]" :key="branch.id" class="building-service-branch"><h3>{{ branch.title }}</h3><ul><li v-for="service in branch.items" :key="service.name" :class="{ 'is-selected-service': selectedService?.name === service.name }"><button type="button" class="building-service-select" :aria-label="`نمایش ${service.name} روی ساختمان`" :aria-pressed="selectedService?.name === service.name" @click="selectService(service, chapter.id)">{{ service.name }}</button><a :href="serviceHref(service)" :aria-label="`جزئیات ${service.name}`" title="جزئیات خدمت"><span aria-hidden="true">↗</span></a></li></ul></div></div>
+            <summary><span>{{ localize(chapter.id === 'delivery' ? (isEnglish ? buildingUiEn.wholeProjectDocs : 'خدمات کل پروژه و همراهی کارفرما') : (isEnglish ? buildingUiEn.serviceSection : 'خدمات این بخش ساختمان')) }}</span><span>{{ formatNumber((serviceEntriesByChapter[chapter.id] || []).length, locale) }} <span aria-hidden="true">＋</span></span></summary>
+            <p v-if="chapter.id === 'delivery'" class="building-project-services-note">{{ isEnglish ? buildingUiEn.projectNote : 'نظارت، مدیریت، مشاوره و همکاری کلان می‌توانند در سراسر مسیر پروژه جریان داشته باشند.' }}</p>
+            <div class="building-service-tree"><div v-for="branch in branchesByChapter[chapter.id]" :key="branch.id" class="building-service-branch"><h3>{{ localize(isEnglish ? serviceGroupsEn[branch.id]?.title || branch.title : branch.title) }}</h3><ul><li v-for="service in branch.items" :key="service.name" :class="{ 'is-selected-service': selectedService?.name === service.name }"><button type="button" class="building-service-select" :aria-label="isEnglish ? `Show ${serviceLabel(service)} on the building` : `نمایش ${serviceLabel(service)} روی ساختمان`" :aria-pressed="selectedService?.name === service.name" @click="selectService(service, chapter.id)" :lang="serviceLanguage(service)" dir="auto">{{ serviceLabel(service) }}</button><a :href="serviceHref(service)" :aria-label="isEnglish ? `${buildingUiEn.details}: ${serviceLabel(service)}` : `جزئیات ${serviceLabel(service)}`" :title="isEnglish ? buildingUiEn.details : 'جزئیات خدمت'"><span aria-hidden="true">↗</span></a></li></ul></div></div>
           </details>
-          <div v-if="samplesByChapter[chapter.id]?.length" class="building-chapter-samples" aria-label="شاهد تصویری مرتبط از گزارش‌های کارگاهی">
-            <figure v-for="sample in samplesByChapter[chapter.id].slice(0, 1)" :key="sample.image"><img :src="sample.image" :alt="`نمونهٔ واقعی مرتبط با ${sample.service}`" loading="lazy" decoding="async" width="104" height="80"><figcaption><span>از گزارش‌های کارگاهی</span>{{ sample.service }}<time v-if="formatDate(sample.date)" :datetime="sample.date">{{ formatDate(sample.date) }}</time></figcaption></figure>
+          <div v-if="samplesByChapter[chapter.id]?.length" class="building-chapter-samples" :aria-label="isEnglish ? buildingUiEn.fieldEvidence : 'شاهد تصویری مرتبط از گزارش‌های کارگاهی'">
+            <figure v-for="sample in samplesByChapter[chapter.id].slice(0, 1)" :key="sample.image"><img :src="sample.image" :alt="isEnglish ? `Verified field-report photo related to ${serviceLabel({ name: sample.service })}` : `نمونهٔ واقعی مرتبط با ${sample.service}`" loading="lazy" decoding="async" width="104" height="80"><figcaption><span>{{ isEnglish ? buildingUiEn.fromReports : 'از گزارش‌های کارگاهی' }}</span><span :lang="serviceNamesEn[sample.service] && isEnglish ? 'en' : 'fa'" dir="auto">{{ serviceLabel({ name: sample.service }) }}</span><time v-if="formatDate(sample.date)" :datetime="sample.date">{{ formatDate(sample.date) }}</time></figcaption></figure>
           </div>
           <p class="building-chapter-note">{{ chapter.note }}</p>
-          <button v-if="index < chapters.length - 1" type="button" class="building-text-button building-next-stage" @click="goToStage(index + 2)">مرحلهٔ بعد: {{ chapters[index + 1].label }} <span aria-hidden="true">↓</span></button>
-          <div v-else class="building-complete-actions"><a href="#/contact" class="button button-dark">دربارهٔ پروژهٔ شما صحبت کنیم</a><button type="button" class="building-text-button" @click="goToStage(0)">ساختن از ابتدا <span aria-hidden="true">↻</span></button></div>
+          <button v-if="index < chapters.length - 1" type="button" class="building-text-button building-next-stage" @click="goToStage(index + 2)">{{ isEnglish ? buildingUiEn.next : 'مرحلهٔ بعد: ' }}{{ chapters[index + 1].label }} <span aria-hidden="true">↓</span></button>
+          <div v-else class="building-complete-actions"><a :href="isEnglish ? '/contact?lang=en' : '/contact'" class="button button-dark">{{ isEnglish ? buildingUiEn.contact : 'دربارهٔ پروژهٔ شما صحبت کنیم' }}</a><button type="button" class="building-text-button" @click="goToStage(0)">{{ isEnglish ? buildingUiEn.restart : 'ساختن از ابتدا' }} <span aria-hidden="true">↻</span></button></div>
         </article>
       </div>
     </section>
-    <p class="sr-only" role="status" aria-live="polite" aria-atomic="true">{{ currentChapter ? `مرحلهٔ ${activeStep.toLocaleString('fa-IR')}: ${currentChapter.label}` : 'ابتدای مسیر؛ زمین آمادهٔ ساخت' }}</p>
-    <BuildingServiceFinder ref="serviceFinder" :services="serviceCatalog" :chapters="chapters" @select="selectService" />
-    <footer class="building-outro page-container"><p>یک ساختمان؛ حاصل هماهنگی همهٔ رشته‌ها.</p><a href="#/services">مرور تمام خدمات ارک پل <span aria-hidden="true">↗</span></a></footer>
+    <p class="sr-only" :lang="isEnglish ? 'en' : 'fa'" role="status" aria-live="polite" aria-atomic="true">{{ currentChapter ? (isEnglish ? buildingUiEn.liveStatus.replace('{number}', formatNumber(activeStep, locale)).replace('{label}', currentChapter.label) : `مرحلهٔ ${formatNumber(activeStep, locale)}: ${currentChapter.label}`) : (isEnglish ? buildingUiEn.startStatus : 'ابتدای مسیر؛ زمین آمادهٔ ساخت') }}</p>
+    <BuildingServiceFinder ref="serviceFinder" :services="serviceCatalog" :chapters="chapters" :locale="locale" @select="selectService" />
+    <footer class="building-outro page-container"><p>{{ isEnglish ? buildingUiEn.outro : 'یک ساختمان؛ حاصل هماهنگی همهٔ رشته‌ها.' }}</p><a :href="isEnglish ? '/services?lang=en' : '/services'">{{ isEnglish ? buildingUiEn.allServices : 'مرور تمام خدمات ارک پل' }} <span aria-hidden="true">↗</span></a></footer>
   </div>
 </template>
 

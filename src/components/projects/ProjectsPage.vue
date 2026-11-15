@@ -28,6 +28,7 @@ defineProps({
   projectCover: { type: Function, required: true },
   displayNumber: { type: Function, required: true },
   fallbackImage: { type: Function, required: true },
+  locale: { type: String, default: 'fa' },
 })
 
 const emit = defineEmits([
@@ -44,6 +45,7 @@ function forwardOpenProject(project, event) {
   <ProjectDetail
     v-if="project"
     :project="project"
+    :locale="locale"
     :images="projectImages"
     :gallery-index="galleryIndex"
     :project-status="projectStatus"
@@ -58,6 +60,7 @@ function forwardOpenProject(project, event) {
   <ProjectList
     v-else
     :projects="projects"
+    :locale="locale"
     :in-progress-count="inProgressCount"
     :completed-count="completedCount"
     :history-count="historyCount"
